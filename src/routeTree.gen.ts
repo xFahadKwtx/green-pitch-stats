@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as StoreRouteImport } from './routes/store'
 import { Route as UpcomingGamesRouteImport } from './routes/upcoming-games'
 import { Route as PlayersIndexRouteImport } from './routes/players.index'
 import { Route as PlayersPlayerIdRouteImport } from './routes/players.$playerId'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreRoute = StoreRouteImport.update({
+  id: '/store',
+  path: '/store',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UpcomingGamesRoute = UpcomingGamesRouteImport.update({
@@ -44,6 +50,7 @@ const PlayersPlayerIdRoute = PlayersPlayerIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players/': typeof PlayersIndexRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players': typeof PlayersIndexRoute
@@ -59,6 +67,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players/': typeof PlayersIndexRoute
@@ -68,16 +77,23 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/leaderboard'
+    | '/store'
     | '/upcoming-games'
     | '/players/$playerId'
     | '/players/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/leaderboard' | '/upcoming-games' | '/players/$playerId' | '/players'
+    | '/'
+    | '/leaderboard'
+    | '/store'
+    | '/upcoming-games'
+    | '/players/$playerId'
+    | '/players'
   id:
     | '__root__'
     | '/'
     | '/leaderboard'
+    | '/store'
     | '/upcoming-games'
     | '/players/$playerId'
     | '/players/'
@@ -86,6 +102,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  StoreRoute: typeof StoreRoute
   UpcomingGamesRoute: typeof UpcomingGamesRoute
   PlayersPlayerIdRoute: typeof PlayersPlayerIdRoute
   PlayersIndexRoute: typeof PlayersIndexRoute
@@ -105,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/leaderboard'
       fullPath: '/leaderboard'
       preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store': {
+      id: '/store'
+      path: '/store'
+      fullPath: '/store'
+      preLoaderRoute: typeof StoreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upcoming-games': {
@@ -134,6 +158,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LeaderboardRoute: LeaderboardRoute,
+  StoreRoute: StoreRoute,
   UpcomingGamesRoute: UpcomingGamesRoute,
   PlayersPlayerIdRoute: PlayersPlayerIdRoute,
   PlayersIndexRoute: PlayersIndexRoute,
