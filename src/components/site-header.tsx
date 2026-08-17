@@ -41,7 +41,7 @@ export function SiteHeader() {
             className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12"
           />
           <span className="min-w-0">
-            <span className="block truncate font-display text-lg leading-tight font-bold tracking-wide uppercase sm:text-xl">
+            <span className="block truncate font-display text-base leading-tight font-bold tracking-wide uppercase sm:text-xl">
               {t("brand")}
             </span>
             <span className="hidden text-[11px] tracking-[0.2em] text-muted-foreground uppercase sm:block">
