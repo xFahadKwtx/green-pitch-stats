@@ -1,3 +1,4 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Crown } from "lucide-react";
 import { useState } from "react";
@@ -6,6 +7,7 @@ import { MonthFilter, PageHeader, PageShell } from "@/components/ui-kit";
 import { num, pct, rating as fmtRating } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { leaderboard, type Category } from "@/lib/leaderboard";
+import { playersQueryOptions } from "@/lib/players-query";
 import type { Period, UnifiedStats } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
