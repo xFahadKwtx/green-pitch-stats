@@ -3,7 +3,7 @@ import { ArrowRight, BarChart3, CalendarDays, Gift, Trophy } from "lucide-react"
 
 import logoAsset from "@/assets/logo.png.asset.json";
 import { Badge, PageShell } from "@/components/ui-kit";
-import { players } from "@/data/players";
+import { playersQueryOptions } from "@/lib/players-query";
 import { announcement } from "@/data/site";
 import { useI18n, type TKey } from "@/lib/i18n";
 
