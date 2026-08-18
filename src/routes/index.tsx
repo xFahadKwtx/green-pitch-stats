@@ -37,6 +37,8 @@ const quickLinks: { to: string; key: TKey; icon: typeof Trophy }[] = [
 
 function Home() {
   const { t, lang } = useI18n();
+  const { data: players } = useQuery(playersQueryOptions);
+
 
   return (
     <PageShell>
@@ -97,7 +99,7 @@ function Home() {
 
       <section className="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
         {[
-          { value: players.length, label: t("home.stats.players") },
+          { value: players?.length ?? 0, label: t("home.stats.players") },
           { value: 64, label: t("home.stats.matches") },
           { value: 12, label: t("home.stats.metrics") },
         ].map((s) => (
