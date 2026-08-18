@@ -1,9 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, BarChart3, CalendarDays, Gift, Trophy } from "lucide-react";
 
 import logoAsset from "@/assets/logo.png.asset.json";
 import { Badge, PageShell } from "@/components/ui-kit";
-import { players } from "@/data/players";
+import { playersQueryOptions } from "@/lib/players-query";
 import { announcement } from "@/data/site";
 import { useI18n, type TKey } from "@/lib/i18n";
 
@@ -36,6 +37,8 @@ const quickLinks: { to: string; key: TKey; icon: typeof Trophy }[] = [
 
 function Home() {
   const { t, lang } = useI18n();
+  const { data: players } = useQuery(playersQueryOptions);
+
 
   return (
     <PageShell>
@@ -96,7 +99,7 @@ function Home() {
 
       <section className="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
         {[
-          { value: players.length, label: t("home.stats.players") },
+          { value: players?.length ?? 0, label: t("home.stats.players") },
           { value: 64, label: t("home.stats.matches") },
           { value: 12, label: t("home.stats.metrics") },
         ].map((s) => (

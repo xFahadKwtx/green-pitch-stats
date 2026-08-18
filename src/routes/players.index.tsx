@@ -1,10 +1,11 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { PageHeader, PageShell } from "@/components/ui-kit";
-import { players } from "@/data/players";
 import { useI18n, type TKey } from "@/lib/i18n";
+import { playersQueryOptions } from "@/lib/players-query";
 
 export const Route = createFileRoute("/players/")({
   head: () => ({
@@ -22,12 +23,21 @@ export const Route = createFileRoute("/players/")({
       },
     ],
   }),
+  loader: ({ context }) => {
+    void context.queryClient.ensureQueryData(playersQueryOptions);
+  },
+  errorComponent: ({ error }) => (
+    <div role="alert" className="p-8 text-center text-muted-foreground">
+      {error.message}
+    </div>
+  ),
   component: PlayersPage,
 });
 
 function PlayersPage() {
   const { t, lang } = useI18n();
   const [query, setQuery] = useState("");
+  const { data: players } = useSuspenseQuery(playersQueryOptions);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -35,7 +45,7 @@ function PlayersPage() {
     return players.filter(
       (p) => p.name.toLowerCase().includes(q) || p.nameAr.includes(query.trim()),
     );
-  }, [query]);
+  }, [players, query]);
 
   return (
     <PageShell>
