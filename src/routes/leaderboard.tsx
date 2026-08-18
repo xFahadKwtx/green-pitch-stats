@@ -27,6 +27,14 @@ export const Route = createFileRoute("/leaderboard")({
       },
     ],
   }),
+  loader: ({ context }) => {
+    void context.queryClient.ensureQueryData(playersQueryOptions);
+  },
+  errorComponent: ({ error }) => (
+    <div role="alert" className="p-8 text-center text-muted-foreground">
+      {error.message}
+    </div>
+  ),
   component: LeaderboardPage,
 });
 
@@ -186,6 +194,7 @@ function Board({
 function LeaderboardPage() {
   const { t } = useI18n();
   const [period, setPeriod] = useState<Period>("all");
+  const { data: players } = useSuspenseQuery(playersQueryOptions);
 
   return (
     <PageShell>
@@ -198,7 +207,7 @@ function LeaderboardPage() {
             title={t(b.title)}
             nameLabel={t(b.nameLabel)}
             columns={b.columns}
-            rows={leaderboard(b.category, period).slice(0, 10)}
+            rows={leaderboard(b.category, period, players).slice(0, 10)}
           />
         ))}
       </div>
