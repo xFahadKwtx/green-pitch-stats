@@ -1,5 +1,4 @@
-import { players } from "@/data/players";
-import { isKeeper } from "@/data/types";
+import { isKeeper, type Player } from "@/data/types";
 import { unifiedStats, type Period, type UnifiedStats } from "./stats";
 
 export type Category =
@@ -27,7 +26,11 @@ const asc = (pick: (s: UnifiedStats) => number) => (a: UnifiedStats, b: UnifiedS
 const games = (s: UnifiedStats) => s.gamesPlayed;
 const rating = (s: UnifiedStats) => s.highestRating;
 
-export function leaderboard(category: Category, period: Period): UnifiedStats[] {
+export function leaderboard(
+  category: Category,
+  period: Period,
+  players: Player[],
+): UnifiedStats[] {
   const outfielders = players.filter((p) => !isKeeper(p));
   const keepers = players.filter(isKeeper);
 
