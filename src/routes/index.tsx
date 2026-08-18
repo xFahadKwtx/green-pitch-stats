@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, BarChart3, CalendarDays, Gift, Trophy } from "lucide-react";
 
