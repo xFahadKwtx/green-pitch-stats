@@ -3,18 +3,24 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 
 import { MonthFilter, PageShell, SectionTitle, StatCard } from "@/components/ui-kit";
-import { getPlayerById } from "@/data/players";
 import { isKeeper } from "@/data/types";
 import { num, pct, rating as fmtRating } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
+import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
 
 export const Route = createFileRoute("/players/$playerId")({
-  loader: ({ params }) => {
-    const player = getPlayerById(params.playerId);
+  loader: async ({ context, params }) => {
+    const players = await context.queryClient.ensureQueryData(playersQueryOptions);
+    const player = players.find((p) => p.id === params.playerId);
     if (!player) throw notFound();
     return { player };
   },
+  errorComponent: ({ error }) => (
+    <div role="alert" className="p-8 text-center text-muted-foreground">
+      {error.message}
+    </div>
+  ),
   head: ({ loaderData }) => {
     if (!loaderData) {
       return {
