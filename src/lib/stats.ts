@@ -1,142 +1,140 @@
-import type {
-  KeeperMonthStats,
-  KeeperPlayer,
-  MonthKey,
-  OutfieldMonthStats,
-  OutfieldPlayer,
-  Player,
-} from "@/data/types";
-import { MONTHS, isKeeper } from "@/data/types";
+import type { MonthKey, MonthStats, Player, StatValue } from "@/data/types";
+import { MONTHS } from "@/data/types";
 
 export type Period = MonthKey | "all";
 
-const periodMonths = (period: Period): MonthKey[] =>
-  period === "all" ? MONTHS : [period];
+/** Months included for this player: for "all", only the months they played. */
+export function recordedMonths(player: Player, period: Period): MonthKey[] {
+  const candidates = period === "all" ? MONTHS : [period];
+  return candidates.filter((m) => Boolean(player.stats[m]));
+}
 
-/** Weighted-by-games aggregation of outfield months. */
-export function aggregateOutfield(
-  player: OutfieldPlayer,
-  period: Period,
-): (OutfieldMonthStats & { passAccuracy: number }) | null {
-  const rows = periodMonths(period)
-    .map((m) => player.stats[m])
-    .filter((r): r is OutfieldMonthStats => Boolean(r));
+/** Months where this player actually has goalkeeper data (GK saves). */
+export function keeperMonths(player: Player, period: Period): MonthKey[] {
+  return recordedMonths(player, period).filter((m) => {
+    const s = player.stats[m]!;
+    return typeof s.saves === "number" && typeof s.shotsFaced === "number";
+  });
+}
+
+/**
+ * Sums a statistic across months. Returns null (N/A) when the statistic is
+ * missing in ANY included month — partial-period totals are never produced.
+ */
+function total(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
   if (rows.length === 0) return null;
+  let sum = 0;
+  for (const row of rows) {
+    const value = pick(row);
+    if (typeof value !== "number") return null;
+    sum += value;
+  }
+  return sum;
+}
 
-  const sum = (pick: (r: OutfieldMonthStats) => number) =>
-    rows.reduce((acc, r) => acc + pick(r), 0);
+/** Max across months; null when missing in any included month. */
+function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
+  if (rows.length === 0) return null;
+  let best: number | null = null;
+  for (const row of rows) {
+    const value = pick(row);
+    if (typeof value !== "number") return null;
+    best = best === null ? value : Math.max(best, value);
+  }
+  return best;
+}
 
-  const gamesPlayed = sum((r) => r.gamesPlayed);
-  const passes = sum((r) => r.passes);
-  const passesCompleted = sum((r) => r.passesCompleted);
-  const ratingWeight = rows.reduce(
-    (acc, r) => acc + r.avgRating * r.gamesPlayed,
-    0,
-  );
+const ratio = (part: StatValue, whole: StatValue): StatValue =>
+  typeof part === "number" && typeof whole === "number" && whole > 0
+    ? (part / whole) * 100
+    : null;
+
+export interface OutfieldAggregate {
+  months: MonthKey[];
+  gamesPlayed: StatValue;
+  mvpAwards: StatValue;
+  goals: StatValue;
+  assists: StatValue;
+  shots: StatValue;
+  shotsOnTarget: StatValue;
+  passes: StatValue;
+  passesCompleted: StatValue;
+  passAccuracy: StatValue;
+  tackles: StatValue;
+  clearances: StatValue;
+  dribbles: StatValue;
+  keyPasses: StatValue;
+  chancesCreated: StatValue;
+  avgRating: StatValue;
+  highestRating: StatValue;
+}
+
+export interface KeeperAggregate {
+  months: MonthKey[];
+  gamesPlayed: StatValue;
+  mvpAwards: StatValue;
+  saves: StatValue;
+  shotsFaced: StatValue;
+  goalsConceded: StatValue;
+  savePercentage: StatValue;
+  avgRating: StatValue;
+  highestRating: StatValue;
+}
+
+export function aggregateOutfield(
+  player: Player,
+  period: Period,
+): OutfieldAggregate | null {
+  const months = recordedMonths(player, period);
+  if (months.length === 0) return null;
+  const rows = months.map((m) => player.stats[m]!);
+
+  const passes = total(rows, (r) => r.passes);
+  const passesCompleted = total(rows, (r) => r.passesCompleted);
 
   return {
-    gamesPlayed,
-    mvpAwards: sum((r) => r.mvpAwards),
-    goals: sum((r) => r.goals),
-    assists: sum((r) => r.assists),
-    shots: sum((r) => r.shots),
-    shotsOnTarget: sum((r) => r.shotsOnTarget),
+    months,
+    gamesPlayed: total(rows, (r) => r.gamesPlayed),
+    mvpAwards: total(rows, (r) => r.mvpAwards),
+    goals: total(rows, (r) => r.goals),
+    assists: total(rows, (r) => r.assists),
+    shots: total(rows, (r) => r.shots),
+    shotsOnTarget: total(rows, (r) => r.shotsOnTarget),
     passes,
     passesCompleted,
-    tackles: sum((r) => r.tackles),
-    clearances: sum((r) => r.clearances),
-    dribbles: sum((r) => r.dribbles),
-    keyPasses: sum((r) => r.keyPasses),
-    chancesCreated: sum((r) => r.chancesCreated),
-    avgRating: gamesPlayed ? ratingWeight / gamesPlayed : 0,
-    highestRating: Math.max(...rows.map((r) => r.highestRating)),
-    passAccuracy: passes ? (passesCompleted / passes) * 100 : 0,
+    passAccuracy: ratio(passesCompleted, passes),
+    tackles: total(rows, (r) => r.tackles),
+    clearances: total(rows, (r) => r.clearances),
+    dribbles: total(rows, (r) => r.dribbles),
+    keyPasses: total(rows, (r) => r.keyPasses),
+    chancesCreated: total(rows, (r) => r.chancesCreated),
+    avgRating: null, // no true average-rating field exists in Airtable
+    highestRating: peak(rows, (r) => r.highestRating),
   };
 }
 
-export function aggregateKeeper(
-  player: KeeperPlayer,
-  period: Period,
-): (KeeperMonthStats & { savePercentage: number }) | null {
-  const rows = periodMonths(period)
-    .map((m) => player.stats[m])
-    .filter((r): r is KeeperMonthStats => Boolean(r));
-  if (rows.length === 0) return null;
+export function aggregateKeeper(player: Player, period: Period): KeeperAggregate | null {
+  if (!player.playsKeeper) return null;
+  const months = keeperMonths(player, period);
+  if (months.length === 0) return null;
+  const rows = months.map((m) => player.stats[m]!);
 
-  const sum = (pick: (r: KeeperMonthStats) => number) =>
-    rows.reduce((acc, r) => acc + pick(r), 0);
-
-  const gamesPlayed = sum((r) => r.gamesPlayed);
-  const saves = sum((r) => r.saves);
-  const shotsFaced = sum((r) => r.shotsFaced);
-  const ratingWeight = rows.reduce(
-    (acc, r) => acc + r.avgRating * r.gamesPlayed,
-    0,
-  );
+  const saves = total(rows, (r) => r.saves);
+  const shotsFaced = total(rows, (r) => r.shotsFaced);
+  const conceded =
+    typeof saves === "number" && typeof shotsFaced === "number"
+      ? Math.max(shotsFaced - saves, 0)
+      : null;
 
   return {
-    gamesPlayed,
-    mvpAwards: sum((r) => r.mvpAwards),
+    months,
+    gamesPlayed: total(rows, (r) => r.gamesPlayed),
+    mvpAwards: total(rows, (r) => r.mvpAwards),
     saves,
     shotsFaced,
-    goalsConceded: sum((r) => r.goalsConceded),
-    avgRating: gamesPlayed ? ratingWeight / gamesPlayed : 0,
-    highestRating: Math.max(...rows.map((r) => r.highestRating)),
-    savePercentage: shotsFaced ? (saves / shotsFaced) * 100 : 0,
+    goalsConceded: conceded,
+    savePercentage: ratio(saves, shotsFaced),
+    avgRating: null,
+    highestRating: peak(rows, (r) => r.highestRating),
   };
-}
-
-/** Common shape used by leaderboards for any player type. */
-export interface UnifiedStats {
-  player: Player;
-  gamesPlayed: number;
-  mvpAwards: number;
-  goals: number;
-  assists: number;
-  tackles: number;
-  passes: number;
-  passAccuracy: number;
-  savePercentage: number;
-  avgRating: number;
-  highestRating: number;
-}
-
-export function unifiedStats(period: Period, pool: Player[]): UnifiedStats[] {
-  const rows: UnifiedStats[] = [];
-  for (const player of pool) {
-    if (isKeeper(player)) {
-      const s = aggregateKeeper(player, period);
-      if (!s) continue;
-      rows.push({
-        player,
-        gamesPlayed: s.gamesPlayed,
-        mvpAwards: s.mvpAwards,
-        goals: 0,
-        assists: 0,
-        tackles: 0,
-        passes: 0,
-        passAccuracy: 0,
-        savePercentage: s.savePercentage,
-        avgRating: s.avgRating,
-        highestRating: s.highestRating,
-      });
-    } else {
-      const s = aggregateOutfield(player, period);
-      if (!s) continue;
-      rows.push({
-        player,
-        gamesPlayed: s.gamesPlayed,
-        mvpAwards: s.mvpAwards,
-        goals: s.goals,
-        assists: s.assists,
-        tackles: s.tackles,
-        passes: s.passes,
-        passAccuracy: s.passAccuracy,
-        savePercentage: 0,
-        avgRating: s.avgRating,
-        highestRating: s.highestRating,
-      });
-    }
-  }
-  return rows;
 }

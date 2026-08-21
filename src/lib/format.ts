@@ -64,3 +64,16 @@ export const rating = (v: number, lang: Lang) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+/** Localised "not recorded in Airtable" marker. */
+export const NA = (lang: Lang) => (lang === "ar" ? "غير متاح" : "N/A");
+
+/** Formatters that render missing Airtable data as N/A instead of 0. */
+export const numOrNA = (v: number | null, lang: Lang) =>
+  typeof v === "number" ? num(v, lang) : NA(lang);
+
+export const pctOrNA = (v: number | null, lang: Lang) =>
+  typeof v === "number" ? pct(v, lang) : NA(lang);
+
+export const ratingOrNA = (v: number | null, lang: Lang) =>
+  typeof v === "number" ? rating(v, lang) : NA(lang);
