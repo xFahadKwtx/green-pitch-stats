@@ -3,8 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 
 import { MonthFilter, PageShell, SectionTitle, StatCard } from "@/components/ui-kit";
-import { isKeeper } from "@/data/types";
-import { num, pct, rating as fmtRating } from "@/lib/format";
+import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
@@ -50,9 +49,14 @@ function PlayerProfile() {
   const { t, lang } = useI18n();
   const [period, setPeriod] = useState<Period>("all");
 
-  const keeper = isKeeper(player);
-  const outStats = keeper ? null : aggregateOutfield(player, period);
-  const gkStats = keeper ? aggregateKeeper(player, period) : null;
+  // One profile per player: a mixed player (e.g. "CM, GK") shows both blocks.
+  const outStats = player.playsOutfield ? aggregateOutfield(player, period) : null;
+  const gkStats = aggregateKeeper(player, period);
+
+  const positionLabel =
+    player.positions.length > 0
+      ? player.positions.join(" · ")
+      : t(`pos.${player.positionGroup}` as TKey);
 
   return (
     <PageShell>
@@ -67,7 +71,7 @@ function PlayerProfile() {
       <header className="glass-card topo-lines mb-6 grid gap-5 p-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-8">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.28em] text-gold uppercase">
-            {t(`pos.${player.position}` as TKey)}
+            {positionLabel}
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight uppercase sm:text-5xl">
             {lang === "ar" ? player.nameAr : player.name}
@@ -78,7 +82,7 @@ function PlayerProfile() {
             {t("profile.points")}
           </p>
           <p className="stat-number mt-1 text-4xl text-gold sm:text-5xl">
-            {num(player.points, lang)}
+            {numOrNA(player.points, lang)}
           </p>
         </div>
       </header>
@@ -91,44 +95,108 @@ function PlayerProfile() {
           {t("profile.noData")}
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-          <StatCard label={t("stat.games")} value={num((outStats ?? gkStats)!.gamesPlayed, lang)} />
+        <div className="grid gap-8">
           {outStats ? (
-            <>
-              <StatCard label={t("stat.goals")} value={num(outStats.goals, lang)} highlight />
-              <StatCard label={t("stat.assists")} value={num(outStats.assists, lang)} highlight />
-              <StatCard label={t("stat.shots")} value={num(outStats.shots, lang)} />
-              <StatCard label={t("stat.sot")} value={num(outStats.shotsOnTarget, lang)} />
-              <StatCard label={t("stat.passes")} value={num(outStats.passes, lang)} />
-              <StatCard label={t("stat.passAcc")} value={pct(outStats.passAccuracy, lang)} />
-              <StatCard label={t("stat.tackles")} value={num(outStats.tackles, lang)} />
-              <StatCard label={t("stat.clearances")} value={num(outStats.clearances, lang)} />
-              <StatCard label={t("stat.dribbles")} value={num(outStats.dribbles, lang)} />
-              <StatCard label={t("stat.keyPasses")} value={num(outStats.keyPasses, lang)} />
-              <StatCard label={t("stat.chances")} value={num(outStats.chancesCreated, lang)} />
-              <StatCard
-                label={t("stat.rating")}
-                value={fmtRating(outStats.avgRating, lang)}
-                highlight
-              />
-            </>
+            <section>
+              <SectionTitle>{t("profile.outfield")}</SectionTitle>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+                <StatCard
+                  label={t("stat.games")}
+                  value={numOrNA(outStats.gamesPlayed, lang)}
+                />
+                <StatCard
+                  label={t("stat.goals")}
+                  value={numOrNA(outStats.goals, lang)}
+                  highlight
+                />
+                <StatCard
+                  label={t("stat.assists")}
+                  value={numOrNA(outStats.assists, lang)}
+                  highlight
+                />
+                <StatCard label={t("stat.shots")} value={numOrNA(outStats.shots, lang)} />
+                <StatCard
+                  label={t("stat.sot")}
+                  value={numOrNA(outStats.shotsOnTarget, lang)}
+                />
+                <StatCard
+                  label={t("stat.passes")}
+                  value={numOrNA(outStats.passes, lang)}
+                />
+                <StatCard
+                  label={t("stat.passAcc")}
+                  value={pctOrNA(outStats.passAccuracy, lang)}
+                />
+                <StatCard
+                  label={t("stat.tackles")}
+                  value={numOrNA(outStats.tackles, lang)}
+                />
+                <StatCard
+                  label={t("stat.clearances")}
+                  value={numOrNA(outStats.clearances, lang)}
+                />
+                <StatCard
+                  label={t("stat.dribbles")}
+                  value={numOrNA(outStats.dribbles, lang)}
+                />
+                <StatCard
+                  label={t("stat.keyPasses")}
+                  value={numOrNA(outStats.keyPasses, lang)}
+                />
+                <StatCard
+                  label={t("stat.chances")}
+                  value={numOrNA(outStats.chancesCreated, lang)}
+                />
+                <StatCard
+                  label={t("stat.rating")}
+                  value={ratingOrNA(outStats.avgRating, lang)}
+                />
+                <StatCard
+                  label={t("stat.highRating")}
+                  value={ratingOrNA(outStats.highestRating, lang)}
+                  highlight
+                />
+                <StatCard label={t("stat.mvp")} value={numOrNA(outStats.mvpAwards, lang)} />
+              </div>
+            </section>
           ) : null}
+
           {gkStats ? (
-            <>
-              <StatCard label={t("stat.saves")} value={num(gkStats.saves, lang)} highlight />
-              <StatCard label={t("stat.shotsFaced")} value={num(gkStats.shotsFaced, lang)} />
-              <StatCard label={t("stat.conceded")} value={num(gkStats.goalsConceded, lang)} />
-              <StatCard
-                label={t("stat.savePct")}
-                value={pct(gkStats.savePercentage, lang)}
-                highlight
-              />
-              <StatCard
-                label={t("stat.rating")}
-                value={fmtRating(gkStats.avgRating, lang)}
-                highlight
-              />
-            </>
+            <section>
+              <SectionTitle>{t("profile.keeper")}</SectionTitle>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+                <StatCard
+                  label={t("stat.games")}
+                  value={numOrNA(gkStats.gamesPlayed, lang)}
+                />
+                <StatCard
+                  label={t("stat.saves")}
+                  value={numOrNA(gkStats.saves, lang)}
+                  highlight
+                />
+                <StatCard
+                  label={t("stat.shotsFaced")}
+                  value={numOrNA(gkStats.shotsFaced, lang)}
+                />
+                <StatCard
+                  label={t("stat.conceded")}
+                  value={numOrNA(gkStats.goalsConceded, lang)}
+                />
+                <StatCard
+                  label={t("stat.savePct")}
+                  value={pctOrNA(gkStats.savePercentage, lang)}
+                  highlight
+                />
+                <StatCard
+                  label={t("stat.rating")}
+                  value={ratingOrNA(gkStats.avgRating, lang)}
+                />
+                <StatCard
+                  label={t("stat.highRating")}
+                  value={ratingOrNA(gkStats.highestRating, lang)}
+                />
+              </div>
+            </section>
           ) : null}
         </div>
       )}
