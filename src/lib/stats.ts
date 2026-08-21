@@ -76,12 +76,8 @@ export interface KeeperAggregate {
   highestRating: StatValue;
 }
 
-export function aggregateOutfield(
-  player: Player,
-  period: Period,
-): OutfieldAggregate | null {
+export function aggregateOutfield(player: Player, period: Period): OutfieldAggregate {
   const months = recordedMonths(player, period);
-  if (months.length === 0) return null;
   const rows = months.map((m) => player.stats[m]!);
 
   const passes = total(rows, (r) => r.passes);
@@ -103,23 +99,18 @@ export function aggregateOutfield(
     dribbles: total(rows, (r) => r.dribbles),
     keyPasses: total(rows, (r) => r.keyPasses),
     chancesCreated: total(rows, (r) => r.chancesCreated),
-    avgRating: null, // no true average-rating field exists in Airtable
+    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
   };
 }
 
 export function aggregateKeeper(player: Player, period: Period): KeeperAggregate | null {
   if (!player.playsKeeper) return null;
-  const months = keeperMonths(player, period);
-  if (months.length === 0) return null;
+  const months = recordedMonths(player, period);
   const rows = months.map((m) => player.stats[m]!);
 
   const saves = total(rows, (r) => r.saves);
   const shotsFaced = total(rows, (r) => r.shotsFaced);
-  const conceded =
-    typeof saves === "number" && typeof shotsFaced === "number"
-      ? Math.max(shotsFaced - saves, 0)
-      : null;
 
   return {
     months,
@@ -127,9 +118,10 @@ export function aggregateKeeper(player: Player, period: Period): KeeperAggregate
     mvpAwards: total(rows, (r) => r.mvpAwards),
     saves,
     shotsFaced,
-    goalsConceded: conceded,
+    goalsConceded: Math.max(shotsFaced - saves, 0),
     savePercentage: ratio(saves, shotsFaced),
-    avgRating: null,
+    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
   };
 }
+
