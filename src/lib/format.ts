@@ -17,7 +17,7 @@ export function longDate(iso: string, lang: Lang) {
   });
 }
 
-export function prettyTime(time: string, lang: Lang) {
+export function prettyTime(time: string, _lang: Lang) {
   const normalized = time.trim().toUpperCase();
   const amPmMatch = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/);
 
@@ -38,12 +38,10 @@ export function prettyTime(time: string, lang: Lang) {
     m = minute ?? 0;
   }
 
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d.toLocaleTimeString(localeOf(lang), {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  const minute = m.toString().padStart(2, "0");
+  return `${hour12}:${minute} ${period}`;
 }
 
 export const matchLocation = (match: Match, lang: Lang) =>
