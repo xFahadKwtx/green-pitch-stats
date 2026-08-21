@@ -97,3 +97,48 @@ export const pair = (value: unknown): [number, number] => {
 
 export const selects = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/**
+ * Numeric cell that distinguishes "not recorded" from a real 0.
+ * Returns null when the Airtable cell is empty/absent.
+ */
+export const optNumeric = (value: unknown): number | null => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    const parsed = Number(text.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * Parses Airtable pair cells such as "91 - 76" into [91, 76].
+ * Returns [null, null] when the cell is empty or unparsable — a missing pair is
+ * never treated as zero.
+ */
+export const optPair = (value: unknown): [number | null, number | null] => {
+  const text = str(value);
+  if (!text) return [null, null];
+  const parts = text
+    .split(/[-/]/)
+    .map((p) => p.replace(/[^\d.]/g, "").trim())
+    .filter((p) => p !== "")
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+  if (parts.length < 2) return [null, null];
+  return [parts[0] as number, parts[1] as number];
+};
+
+/** Linked-record ids found on a record (any link field). */
+export const linkedRecordIds = (fields: Record<string, unknown>): string[] => {
+  const ids: string[] = [];
+  for (const value of Object.values(fields)) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (typeof item === "string" && /^rec[A-Za-z0-9]{10,}$/.test(item)) ids.push(item);
+    }
+  }
+  return ids;
+};
