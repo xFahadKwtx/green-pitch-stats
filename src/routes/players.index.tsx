@@ -84,14 +84,16 @@ function PlayersPage() {
                 className="glass-card flex items-center gap-4 p-4 transition-transform duration-300 hover:-translate-y-0.5 hover:border-gold/40"
               >
                 <span className="stat-number grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-gold/30 bg-gold/10 text-sm text-gold">
-                  {p.position}
+                  {p.positionGroup}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-display text-lg font-semibold tracking-wide">
                     {lang === "ar" ? p.nameAr : p.name}
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">
-                    {t(`pos.${p.position}` as TKey)}
+                    {p.positions.length > 0
+                      ? p.positions.join(" · ")
+                      : t(`pos.${p.positionGroup}` as TKey)}
                   </span>
                 </span>
                 <ChevronRight
