@@ -18,36 +18,31 @@ export function keeperMonths(player: Player, period: Period): MonthKey[] {
 }
 
 /**
- * Sums a statistic across months. Returns null (N/A) when the statistic is
- * missing in ANY included month — partial-period totals are never produced.
+ * Sums a statistic across months. Missing values contribute 0, so a period
+ * total always reflects whatever was actually recorded.
  */
-function total(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
-  if (rows.length === 0) return null;
+function total(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
   let sum = 0;
   for (const row of rows) {
     const value = pick(row);
-    if (typeof value !== "number") return null;
-    sum += value;
+    if (typeof value === "number") sum += value;
   }
   return sum;
 }
 
-/** Max across months; null when missing in any included month. */
-function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
-  if (rows.length === 0) return null;
-  let best: number | null = null;
+/** Max across months; 0 when nothing was recorded. */
+function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
+  let best = 0;
   for (const row of rows) {
     const value = pick(row);
-    if (typeof value !== "number") return null;
-    best = best === null ? value : Math.max(best, value);
+    if (typeof value === "number") best = Math.max(best, value);
   }
   return best;
 }
 
-const ratio = (part: StatValue, whole: StatValue): StatValue =>
-  typeof part === "number" && typeof whole === "number" && whole > 0
-    ? (part / whole) * 100
-    : null;
+const ratio = (part: number, whole: number): number =>
+  whole > 0 ? (part / whole) * 100 : 0;
+
 
 export interface OutfieldAggregate {
   months: MonthKey[];
@@ -81,12 +76,8 @@ export interface KeeperAggregate {
   highestRating: StatValue;
 }
 
-export function aggregateOutfield(
-  player: Player,
-  period: Period,
-): OutfieldAggregate | null {
+export function aggregateOutfield(player: Player, period: Period): OutfieldAggregate {
   const months = recordedMonths(player, period);
-  if (months.length === 0) return null;
   const rows = months.map((m) => player.stats[m]!);
 
   const passes = total(rows, (r) => r.passes);
@@ -108,23 +99,18 @@ export function aggregateOutfield(
     dribbles: total(rows, (r) => r.dribbles),
     keyPasses: total(rows, (r) => r.keyPasses),
     chancesCreated: total(rows, (r) => r.chancesCreated),
-    avgRating: null, // no true average-rating field exists in Airtable
+    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
   };
 }
 
 export function aggregateKeeper(player: Player, period: Period): KeeperAggregate | null {
   if (!player.playsKeeper) return null;
-  const months = keeperMonths(player, period);
-  if (months.length === 0) return null;
+  const months = recordedMonths(player, period);
   const rows = months.map((m) => player.stats[m]!);
 
   const saves = total(rows, (r) => r.saves);
   const shotsFaced = total(rows, (r) => r.shotsFaced);
-  const conceded =
-    typeof saves === "number" && typeof shotsFaced === "number"
-      ? Math.max(shotsFaced - saves, 0)
-      : null;
 
   return {
     months,
@@ -132,9 +118,10 @@ export function aggregateKeeper(player: Player, period: Period): KeeperAggregate
     mvpAwards: total(rows, (r) => r.mvpAwards),
     saves,
     shotsFaced,
-    goalsConceded: conceded,
+    goalsConceded: Math.max(shotsFaced - saves, 0),
     savePercentage: ratio(saves, shotsFaced),
-    avgRating: null,
+    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
   };
 }
+
