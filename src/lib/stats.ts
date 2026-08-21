@@ -40,6 +40,16 @@ function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
   return best;
 }
 
+/** Min across recorded months; 0 when nothing was recorded. */
+function trough(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
+  let low: number | null = null;
+  for (const row of rows) {
+    const value = pick(row);
+    if (typeof value === "number") low = low === null ? value : Math.min(low, value);
+  }
+  return low ?? 0;
+}
+
 const ratio = (part: number, whole: number): number =>
   whole > 0 ? (part / whole) * 100 : 0;
 
