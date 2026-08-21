@@ -1,63 +1,63 @@
 /**
- * Domain types. UI never builds these itself — data comes from this layer only,
- * so it can be swapped for a database/API later without touching components.
+ * Domain types. UI never builds these itself — data comes from the Airtable
+ * data layer only.
+ *
+ * IMPORTANT: every statistic is `number | null`. `null` means "not recorded in
+ * Airtable" and must be rendered as N/A — never as 0. Only a real Airtable 0 is
+ * shown as 0.
  */
 
 export type MonthKey = "2026-06" | "2026-07" | "2026-08";
 
 export const MONTHS: MonthKey[] = ["2026-06", "2026-07", "2026-08"];
 
+/** Coarse grouping used for display/sorting only. */
 export type Position = "GK" | "DEF" | "MID" | "FWD";
 
-export interface OutfieldMonthStats {
-  gamesPlayed: number;
-  mvpAwards: number;
-  goals: number;
-  assists: number;
-  shots: number;
-  shotsOnTarget: number;
-  passes: number;
-  passesCompleted: number;
-  tackles: number;
-  clearances: number;
-  dribbles: number;
-  keyPasses: number;
-  chancesCreated: number;
-  avgRating: number;
-  highestRating: number;
+export type StatValue = number | null;
+
+/** One month of Airtable statistics for a single player. */
+export interface MonthStats {
+  gamesPlayed: StatValue;
+  mvpAwards: StatValue;
+  /** Outfield */
+  goals: StatValue;
+  assists: StatValue;
+  shots: StatValue;
+  shotsOnTarget: StatValue;
+  /** "Passes" = total - completed */
+  passes: StatValue;
+  passesCompleted: StatValue;
+  tackles: StatValue;
+  clearances: StatValue;
+  dribbles: StatValue;
+  keyPasses: StatValue;
+  chancesCreated: StatValue;
+  /** Goalkeeper — "GK saves" = shots faced - saves */
+  shotsFaced: StatValue;
+  saves: StatValue;
+  /** Ratings */
+  avgRating: StatValue;
+  highestRating: StatValue;
 }
 
-export interface KeeperMonthStats {
-  gamesPlayed: number;
-  mvpAwards: number;
-  saves: number;
-  shotsFaced: number;
-  goalsConceded: number;
-  avgRating: number;
-  highestRating: number;
-}
-
-export interface PlayerBase {
+export interface Player {
+  /** Airtable "Player ID" (stable identifier). */
   id: string;
+  /** Official Name EN */
   name: string;
+  /** Official Name AR */
   nameAr: string;
-  position: Position;
-  points: number;
+  /** Raw Airtable positions, e.g. ["CM", "GK"]. */
+  positions: string[];
+  /** Coarse group derived from `positions`. */
+  positionGroup: Position;
+  playsKeeper: boolean;
+  playsOutfield: boolean;
+  /** Points Balance */
+  points: StatValue;
+  stats: Partial<Record<MonthKey, MonthStats>>;
 }
-
-export interface OutfieldPlayer extends PlayerBase {
-  position: "DEF" | "MID" | "FWD";
-  stats: Partial<Record<MonthKey, OutfieldMonthStats>>;
-}
-
-export interface KeeperPlayer extends PlayerBase {
-  position: "GK";
-  stats: Partial<Record<MonthKey, KeeperMonthStats>>;
-}
-
-export type Player = OutfieldPlayer | KeeperPlayer;
-
-export const isKeeper = (p: Player): p is KeeperPlayer => p.position === "GK";
 
 export interface Match {
   id: string;
