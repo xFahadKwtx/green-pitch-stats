@@ -1,8 +1,8 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, MapPin, MessageCircle } from "lucide-react";
 
 import { PageHeader, PageShell } from "@/components/ui-kit";
-import { upcomingMatches } from "@/data/matches";
 import { contactInfo } from "@/data/site";
 import type { Match } from "@/data/types";
 import {
@@ -13,6 +13,7 @@ import {
   registrationLink,
 } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
+import { upcomingGamesQueryOptions } from "@/lib/upcoming-games-query";
 
 export const Route = createFileRoute("/upcoming-games")({
   head: () => ({
@@ -30,6 +31,14 @@ export const Route = createFileRoute("/upcoming-games")({
       },
     ],
   }),
+  loader: ({ context }) => {
+    void context.queryClient.ensureQueryData(upcomingGamesQueryOptions);
+  },
+  errorComponent: ({ error }) => (
+    <div role="alert" className="p-8 text-center text-muted-foreground">
+      {error.message}
+    </div>
+  ),
   component: UpcomingGames,
 });
 
@@ -91,6 +100,8 @@ function GameCard({ match }: { match: Match }) {
 
 function UpcomingGames() {
   const { t } = useI18n();
+  const { data: upcomingMatches } = useSuspenseQuery(upcomingGamesQueryOptions);
+
   return (
     <PageShell>
       <PageHeader

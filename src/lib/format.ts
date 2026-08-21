@@ -18,9 +18,28 @@ export function longDate(iso: string, lang: Lang) {
 }
 
 export function prettyTime(time: string, lang: Lang) {
-  const [h, m] = time.split(":").map(Number);
+  const normalized = time.trim().toUpperCase();
+  const amPmMatch = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/);
+
+  let h = 0;
+  let m = 0;
+
+  if (amPmMatch) {
+    let hour = Number(amPmMatch[1]);
+    const minute = Number(amPmMatch[2]);
+    const period = amPmMatch[3];
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    h = hour;
+    m = minute;
+  } else {
+    const [hour, minute] = time.split(":").map(Number);
+    h = hour ?? 0;
+    m = minute ?? 0;
+  }
+
   const d = new Date();
-  d.setHours(h ?? 0, m ?? 0, 0, 0);
+  d.setHours(h, m, 0, 0);
   return d.toLocaleTimeString(localeOf(lang), {
     hour: "numeric",
     minute: "2-digit",
