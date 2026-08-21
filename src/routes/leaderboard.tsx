@@ -4,11 +4,11 @@ import { Crown } from "lucide-react";
 import { useState } from "react";
 
 import { MonthFilter, PageHeader, PageShell } from "@/components/ui-kit";
-import { num, pct, rating as fmtRating } from "@/lib/format";
+import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
-import { leaderboard, type Category } from "@/lib/leaderboard";
+import { leaderboard, type Category, type LeaderRow } from "@/lib/leaderboard";
 import { playersQueryOptions } from "@/lib/players-query";
-import type { Period, UnifiedStats } from "@/lib/stats";
+import type { Period } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/leaderboard")({
@@ -40,7 +40,7 @@ export const Route = createFileRoute("/leaderboard")({
 
 interface Column {
   key: TKey;
-  render: (s: UnifiedStats, lang: "en" | "ar") => string;
+  render: (s: LeaderRow, lang: "en" | "ar") => string;
 }
 
 const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Column[] }[] = [
@@ -49,9 +49,9 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.potm",
     nameLabel: "lb.player",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.mvp", render: (s, l) => num(s.mvpAwards, l) },
-      { key: "stat.highRating", render: (s, l) => fmtRating(s.highestRating, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.mvp", render: (s, l) => numOrNA(s.mvpAwards, l) },
+      { key: "stat.highRating", render: (s, l) => ratingOrNA(s.highestRating, l) },
     ],
   },
   {
@@ -59,8 +59,8 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.scorer",
     nameLabel: "lb.player",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.goals", render: (s, l) => num(s.goals, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.goals", render: (s, l) => numOrNA(s.goals, l) },
     ],
   },
   {
@@ -68,8 +68,8 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.assists",
     nameLabel: "lb.player",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.assists", render: (s, l) => num(s.assists, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.assists", render: (s, l) => numOrNA(s.assists, l) },
     ],
   },
   {
@@ -77,8 +77,8 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.defender",
     nameLabel: "lb.player",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.tackles", render: (s, l) => num(s.tackles, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.tackles", render: (s, l) => numOrNA(s.tackles, l) },
     ],
   },
   {
@@ -86,9 +86,9 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.passing",
     nameLabel: "lb.player",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.passes", render: (s, l) => num(s.passes, l) },
-      { key: "stat.passAcc", render: (s, l) => pct(s.passAccuracy, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.passes", render: (s, l) => numOrNA(s.passes, l) },
+      { key: "stat.passAcc", render: (s, l) => pctOrNA(s.passAccuracy, l) },
     ],
   },
   {
@@ -96,8 +96,8 @@ const boards: { category: Category; title: TKey; nameLabel: TKey; columns: Colum
     title: "lb.keeperTitle",
     nameLabel: "lb.keeper",
     columns: [
-      { key: "stat.games", render: (s, l) => num(s.gamesPlayed, l) },
-      { key: "stat.savePct", render: (s, l) => pct(s.savePercentage, l) },
+      { key: "stat.games", render: (s, l) => numOrNA(s.gamesPlayed, l) },
+      { key: "stat.savePct", render: (s, l) => pctOrNA(s.savePercentage, l) },
     ],
   },
 ];
@@ -110,7 +110,7 @@ function Board({
 }: {
   title: string;
   nameLabel: string;
-  rows: UnifiedStats[];
+  rows: LeaderRow[];
   columns: Column[];
 }) {
   const { t, lang } = useI18n();
