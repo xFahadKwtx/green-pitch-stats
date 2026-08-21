@@ -79,9 +79,8 @@ function monthStats(fields: Record<string, unknown>): MonthStats {
     chancesCreated: optNumeric(fields["Chances Created"]),
     shotsFaced,
     saves,
-    // There is no true average-rating field in Airtable; never derive one.
-    avgRating: optNumeric(fields["Average Rating"]),
     highestRating: optNumeric(fields["Highest Rating"]),
+    lowestRating: optNumeric(fields["Lowest Rating"]),
   };
 }
 
