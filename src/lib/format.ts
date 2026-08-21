@@ -65,15 +65,10 @@ export const rating = (v: number, lang: Lang) =>
     maximumFractionDigits: 2,
   });
 
-/** Localised "not recorded in Airtable" marker. */
-export const NA = (lang: Lang) => (lang === "ar" ? "غير متاح" : "N/A");
+/** Missing/blank data is displayed as 0 (no N/A anywhere on the site). */
+export const numOrNA = (v: number | null, lang: Lang) => num(v ?? 0, lang);
 
-/** Formatters that render missing Airtable data as N/A instead of 0. */
-export const numOrNA = (v: number | null, lang: Lang) =>
-  typeof v === "number" ? num(v, lang) : NA(lang);
+export const pctOrNA = (v: number | null, lang: Lang) => pct(v ?? 0, lang);
 
-export const pctOrNA = (v: number | null, lang: Lang) =>
-  typeof v === "number" ? pct(v, lang) : NA(lang);
+export const ratingOrNA = (v: number | null, lang: Lang) => rating(v ?? 0, lang);
 
-export const ratingOrNA = (v: number | null, lang: Lang) =>
-  typeof v === "number" ? rating(v, lang) : NA(lang);
