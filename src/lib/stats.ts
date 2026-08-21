@@ -18,36 +18,31 @@ export function keeperMonths(player: Player, period: Period): MonthKey[] {
 }
 
 /**
- * Sums a statistic across months. Returns null (N/A) when the statistic is
- * missing in ANY included month — partial-period totals are never produced.
+ * Sums a statistic across months. Missing values contribute 0, so a period
+ * total always reflects whatever was actually recorded.
  */
-function total(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
-  if (rows.length === 0) return null;
+function total(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
   let sum = 0;
   for (const row of rows) {
     const value = pick(row);
-    if (typeof value !== "number") return null;
-    sum += value;
+    if (typeof value === "number") sum += value;
   }
   return sum;
 }
 
-/** Max across months; null when missing in any included month. */
-function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): StatValue {
-  if (rows.length === 0) return null;
-  let best: number | null = null;
+/** Max across months; 0 when nothing was recorded. */
+function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
+  let best = 0;
   for (const row of rows) {
     const value = pick(row);
-    if (typeof value !== "number") return null;
-    best = best === null ? value : Math.max(best, value);
+    if (typeof value === "number") best = Math.max(best, value);
   }
   return best;
 }
 
-const ratio = (part: StatValue, whole: StatValue): StatValue =>
-  typeof part === "number" && typeof whole === "number" && whole > 0
-    ? (part / whole) * 100
-    : null;
+const ratio = (part: number, whole: number): number =>
+  whole > 0 ? (part / whole) * 100 : 0;
+
 
 export interface OutfieldAggregate {
   months: MonthKey[];
