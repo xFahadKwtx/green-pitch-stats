@@ -1,25 +1,23 @@
 /**
  * Maps the Airtable base (read-only) onto the app's domain types.
  * Airtable is never written to — see airtable.server.ts.
+ *
+ * Rules honoured here:
+ * - Only `Show On Website` players are returned.
+ * - Public names come from Official Name EN / Official Name AR (never `Name`).
+ * - Monthly stats are matched through the Airtable linked record, never names.
+ * - A missing Airtable cell becomes `null` (rendered as N/A), never 0.
  */
-import type {
-  KeeperMonthStats,
-  KeeperPlayer,
-  MonthKey,
-  OutfieldMonthStats,
-  OutfieldPlayer,
-  Player,
-  Position,
-} from "@/data/types";
+import type { MonthKey, MonthStats, Player, Position } from "@/data/types";
 
 import {
   AIRTABLE_TABLES,
+  linkedRecordIds,
   listAirtableRecords,
-  numeric,
-  pair,
+  optNumeric,
+  optPair,
   selects,
   str,
-  type AirtableRecord,
 } from "./airtable.server";
 
 const MONTH_TABLES: Record<MonthKey, string> = {
@@ -28,8 +26,7 @@ const MONTH_TABLES: Record<MonthKey, string> = {
   "2026-08": AIRTABLE_TABLES.statsAugust,
 };
 
-const POSITION_GROUP: Record<string, Position> = {
-  GK: "GK",
+const OUTFIELD_GROUP: Record<string, Position> = {
   CB: "DEF",
   RB: "DEF",
   LB: "DEF",
@@ -46,87 +43,73 @@ const POSITION_GROUP: Record<string, Position> = {
   FWD: "FWD",
 };
 
-function resolvePosition(raw: string[]): Position {
-  for (const tag of raw) {
-    const group = POSITION_GROUP[tag.trim().toUpperCase()];
+function groupOf(positions: string[]): Position {
+  for (const tag of positions) {
+    const group = OUTFIELD_GROUP[tag];
     if (group) return group;
   }
-  return "MID";
+  return positions.includes("GK") ? "GK" : "MID";
 }
 
-const avgOf = (low: number, high: number): number => {
-  if (low && high) return (low + high) / 2;
-  return high || low || 0;
-};
+/** Builds one month of stats. Absent Airtable cells stay null (N/A). */
+function monthStats(fields: Record<string, unknown>): MonthStats {
+  const [passes, passesCompleted] = optPair(fields["Passes"]);
+  const [shots, shotsOnTarget] = optPair(fields["SHOTS ttl - SOT"]);
+  const [shotsFaced, saves] = optPair(fields["GK saves"]);
 
-function outfieldStats(fields: Record<string, unknown>): OutfieldMonthStats {
-  const [passes, passesCompleted] = pair(fields["Passes"]);
-  const [shots, shotsOnTarget] = pair(fields["SHOTS ttl - SOT"]);
-  const mvp = numeric(fields["MVP"]) || (fields["POTM"] === true ? 1 : 0);
-  const high = numeric(fields["Highest Rating"]);
-  const low = numeric(fields["Lowest Rating"]);
-  const keyPasses = numeric(fields["KeyPasses"]);
+  // MVP is a per-month counter kept for every month: a blank cell on a played
+  // month means zero awards (confirmed by the base owner).
+  const mvpRaw = optNumeric(fields["MVP"]);
+  const mvpAwards = mvpRaw ?? (fields["POTM"] === true ? 1 : 0);
 
   return {
-    gamesPlayed: numeric(fields["Games played"]),
-    mvpAwards: mvp,
-    goals: numeric(fields["Goals"]),
-    assists: numeric(fields["Assists"]),
+    gamesPlayed: optNumeric(fields["Games played"]),
+    mvpAwards,
+    goals: optNumeric(fields["Goals"]),
+    assists: optNumeric(fields["Assists"]),
     shots,
     shotsOnTarget,
     passes,
     passesCompleted,
-    tackles: numeric(fields["Tackles"]),
-    clearances: numeric(fields["Clearences"]),
-    dribbles: 0,
-    keyPasses,
-    chancesCreated: keyPasses,
-    avgRating: avgOf(low, high),
-    highestRating: high,
-  };
-}
-
-function keeperStats(fields: Record<string, unknown>): KeeperMonthStats {
-  const [shotsFaced, saves] = pair(fields["GK saves"]);
-  const high = numeric(fields["Highest Rating"]);
-  const low = numeric(fields["Lowest Rating"]);
-
-  return {
-    gamesPlayed: numeric(fields["Games played"]),
-    mvpAwards: numeric(fields["MVP"]) || (fields["POTM"] === true ? 1 : 0),
-    saves,
+    tackles: optNumeric(fields["Tackles"]),
+    clearances: optNumeric(fields["Clearences"]),
+    // Not present anywhere in the base yet — always N/A until the fields exist.
+    dribbles: optNumeric(fields["Successful Dribbles"]),
+    keyPasses: optNumeric(fields["KeyPasses"]),
+    chancesCreated: optNumeric(fields["Chances Created"]),
     shotsFaced,
-    goalsConceded: Math.max(shotsFaced - saves, 0),
-    avgRating: avgOf(low, high),
-    highestRating: high,
+    saves,
+    // There is no true average-rating field in Airtable; never derive one.
+    avgRating: optNumeric(fields["Average Rating"]),
+    highestRating: optNumeric(fields["Highest Rating"]),
   };
 }
 
-const hasAnyValue = (fields: Record<string, unknown>): boolean =>
-  numeric(fields["Games played"]) > 0 ||
-  numeric(fields["Goals"]) > 0 ||
-  numeric(fields["Assists"]) > 0 ||
-  str(fields["Passes"]) !== "" ||
-  str(fields["GK saves"]) !== "";
-
-const keyOf = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+/** True when the record holds at least one recorded value. */
+const hasAnyValue = (s: MonthStats): boolean =>
+  Object.entries(s).some(
+    ([key, value]) => key !== "mvpAwards" && typeof value === "number",
+  );
 
 /** Reads every website-visible player plus their monthly stats from Airtable. */
 export async function fetchPlayersFromAirtable(): Promise<Player[]> {
+  const months = Object.keys(MONTH_TABLES) as MonthKey[];
+
   const [playerRows, ...monthRows] = await Promise.all([
     listAirtableRecords(AIRTABLE_TABLES.playersDatabase),
-    ...(Object.keys(MONTH_TABLES) as MonthKey[]).map((month) =>
-      listAirtableRecords(MONTH_TABLES[month]),
-    ),
+    ...months.map((month) => listAirtableRecords(MONTH_TABLES[month])),
   ]);
 
-  const months = Object.keys(MONTH_TABLES) as MonthKey[];
-  const statsByMonth = new Map<MonthKey, Map<string, AirtableRecord>>();
+  /** month -> Airtable player record id -> stats */
+  const statsByMonth = new Map<MonthKey, Map<string, MonthStats>>();
   months.forEach((month, index) => {
-    const map = new Map<string, AirtableRecord>();
+    const map = new Map<string, MonthStats>();
     for (const record of monthRows[index] ?? []) {
-      const name = str(record.fields["Name"]);
-      if (name) map.set(keyOf(name), record);
+      const stats = monthStats(record.fields);
+      if (!hasAnyValue(stats)) continue;
+      for (const playerRecordId of new Set(linkedRecordIds(record.fields))) {
+        map.set(playerRecordId, stats);
+      }
     }
     statsByMonth.set(month, map);
   });
@@ -136,34 +119,31 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
   for (const record of playerRows) {
     if (record.fields["Show On Website"] !== true) continue;
 
-    const nameAr = str(record.fields["Official Name AR"]) || str(record.fields["Name"]);
-    const name = str(record.fields["Official Name EN"]) || nameAr;
+    const name = str(record.fields["Official Name EN"]);
+    const nameAr = str(record.fields["Official Name AR"]);
     if (!name && !nameAr) continue;
 
-    const id = str(record.fields["Player ID"]) || record.id;
-    const position = resolvePosition(selects(record.fields["Position"]));
-    const points = numeric(record.fields["Points Balance"]);
-    const lookupKeys = [nameAr, str(record.fields["Name"]), name]
-      .filter(Boolean)
-      .map(keyOf);
+    const positions = selects(record.fields["Position"])
+      .map((p) => p.trim().toUpperCase())
+      .filter(Boolean);
 
-    if (position === "GK") {
-      const stats: KeeperPlayer["stats"] = {};
-      for (const month of months) {
-        const map = statsByMonth.get(month)!;
-        const row = lookupKeys.map((k) => map.get(k)).find(Boolean);
-        if (row && hasAnyValue(row.fields)) stats[month] = keeperStats(row.fields);
-      }
-      players.push({ id, name, nameAr, position: "GK", points, stats });
-    } else {
-      const stats: OutfieldPlayer["stats"] = {};
-      for (const month of months) {
-        const map = statsByMonth.get(month)!;
-        const row = lookupKeys.map((k) => map.get(k)).find(Boolean);
-        if (row && hasAnyValue(row.fields)) stats[month] = outfieldStats(row.fields);
-      }
-      players.push({ id, name, nameAr, position, points, stats });
+    const stats: Player["stats"] = {};
+    for (const month of months) {
+      const row = statsByMonth.get(month)!.get(record.id);
+      if (row) stats[month] = row;
     }
+
+    players.push({
+      id: str(record.fields["Player ID"]) || record.id,
+      name: name || nameAr,
+      nameAr: nameAr || name,
+      positions,
+      positionGroup: groupOf(positions),
+      playsKeeper: positions.includes("GK"),
+      playsOutfield: positions.some((p) => p !== "GK" && OUTFIELD_GROUP[p] !== undefined),
+      points: optNumeric(record.fields["Points Balance"]),
+      stats,
+    });
   }
 
   return players.sort((a, b) => a.name.localeCompare(b.name));
