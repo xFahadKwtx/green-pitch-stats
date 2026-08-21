@@ -40,6 +40,16 @@ function peak(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
   return best;
 }
 
+/** Min across recorded months; 0 when nothing was recorded. */
+function trough(rows: MonthStats[], pick: (r: MonthStats) => StatValue): number {
+  let low: number | null = null;
+  for (const row of rows) {
+    const value = pick(row);
+    if (typeof value === "number") low = low === null ? value : Math.min(low, value);
+  }
+  return low ?? 0;
+}
+
 const ratio = (part: number, whole: number): number =>
   whole > 0 ? (part / whole) * 100 : 0;
 
@@ -60,8 +70,8 @@ export interface OutfieldAggregate {
   dribbles: StatValue;
   keyPasses: StatValue;
   chancesCreated: StatValue;
-  avgRating: StatValue;
   highestRating: StatValue;
+  lowestRating: StatValue;
 }
 
 export interface KeeperAggregate {
@@ -72,8 +82,8 @@ export interface KeeperAggregate {
   shotsFaced: StatValue;
   goalsConceded: StatValue;
   savePercentage: StatValue;
-  avgRating: StatValue;
   highestRating: StatValue;
+  lowestRating: StatValue;
 }
 
 export function aggregateOutfield(player: Player, period: Period): OutfieldAggregate {
@@ -99,8 +109,8 @@ export function aggregateOutfield(player: Player, period: Period): OutfieldAggre
     dribbles: total(rows, (r) => r.dribbles),
     keyPasses: total(rows, (r) => r.keyPasses),
     chancesCreated: total(rows, (r) => r.chancesCreated),
-    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
+    lowestRating: trough(rows, (r) => r.lowestRating),
   };
 }
 
@@ -120,8 +130,8 @@ export function aggregateKeeper(player: Player, period: Period): KeeperAggregate
     shotsFaced,
     goalsConceded: Math.max(shotsFaced - saves, 0),
     savePercentage: ratio(saves, shotsFaced),
-    avgRating: total(rows, (r) => r.avgRating),
     highestRating: peak(rows, (r) => r.highestRating),
+    lowestRating: trough(rows, (r) => r.lowestRating),
   };
 }
 
