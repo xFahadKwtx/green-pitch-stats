@@ -148,13 +148,13 @@ function PlayerProfile() {
                   value={numOrNA(outStats.chancesCreated, lang)}
                 />
                 <StatCard
-                  label={t("stat.rating")}
-                  value={ratingOrNA(outStats.avgRating, lang)}
-                />
-                <StatCard
                   label={t("stat.highRating")}
                   value={ratingOrNA(outStats.highestRating, lang)}
                   highlight
+                />
+                <StatCard
+                  label={t("stat.lowRating")}
+                  value={ratingOrNA(outStats.lowestRating, lang)}
                 />
                 <StatCard label={t("stat.mvp")} value={numOrNA(outStats.mvpAwards, lang)} />
               </div>
@@ -188,12 +188,12 @@ function PlayerProfile() {
                   highlight
                 />
                 <StatCard
-                  label={t("stat.rating")}
-                  value={ratingOrNA(gkStats.avgRating, lang)}
-                />
-                <StatCard
                   label={t("stat.highRating")}
                   value={ratingOrNA(gkStats.highestRating, lang)}
+                />
+                <StatCard
+                  label={t("stat.lowRating")}
+                  value={ratingOrNA(gkStats.lowestRating, lang)}
                 />
               </div>
             </section>
