@@ -43,31 +43,29 @@ const order =
     return a.player.name.localeCompare(b.player.name);
   };
 
-/** Role-agnostic + goalkeeper rows for one period. */
+/** Role-agnostic + goalkeeper rows for one period. Missing values count as 0. */
 function rowsFor(players: Player[], period: Period): LeaderRow[] {
   const rows: LeaderRow[] = [];
   for (const player of players) {
+    const months = recordedMonths(player, period);
+    if (months.length === 0) continue;
     const out = aggregateOutfield(player, period);
     const gk = aggregateKeeper(player, period);
-    if (!out && !gk) continue;
     rows.push({
       player,
-      gamesPlayed: out?.gamesPlayed ?? gk?.gamesPlayed ?? null,
-      mvpAwards: out?.mvpAwards ?? gk?.mvpAwards ?? null,
-      goals: out?.goals ?? null,
-      assists: out?.assists ?? null,
-      tackles: out?.tackles ?? null,
-      passes: out?.passes ?? null,
-      passAccuracy: out?.passAccuracy ?? null,
-      savePercentage: gk?.savePercentage ?? null,
-      highestRating: out?.highestRating ?? gk?.highestRating ?? null,
+      gamesPlayed: out.gamesPlayed,
+      mvpAwards: out.mvpAwards,
+      goals: out.goals,
+      assists: out.assists,
+      tackles: out.tackles,
+      passes: out.passes,
+      passAccuracy: out.passAccuracy,
+      savePercentage: gk?.savePercentage ?? 0,
+      highestRating: out.highestRating,
     });
   }
   return rows;
 }
-
-const recorded = (pick: (r: LeaderRow) => StatValue) => (r: LeaderRow) =>
-  typeof pick(r) === "number";
 
 export function leaderboard(
   category: Category,
@@ -79,43 +77,33 @@ export function leaderboard(
 
   switch (category) {
     case "potm":
-      return all
-        .filter(recorded((r) => r.mvpAwards))
-        .sort(order(most((r) => r.mvpAwards), most(games), most(rating)));
+      return all.sort(order(most((r) => r.mvpAwards), most(games), most(rating)));
     case "scorer":
-      return outfield
-        .filter(recorded((r) => r.goals))
-        .sort(
-          order(
-            most((r) => r.goals),
-            fewest(games),
-            most((r) => r.assists),
-            most(rating),
-          ),
-        );
+      return outfield.sort(
+        order(
+          most((r) => r.goals),
+          fewest(games),
+          most((r) => r.assists),
+          most(rating),
+        ),
+      );
     case "assists":
-      return outfield
-        .filter(recorded((r) => r.assists))
-        .sort(
-          order(
-            most((r) => r.assists),
-            fewest(games),
-            most((r) => r.goals),
-            most(rating),
-          ),
-        );
+      return outfield.sort(
+        order(
+          most((r) => r.assists),
+          fewest(games),
+          most((r) => r.goals),
+          most(rating),
+        ),
+      );
     case "defender":
-      return outfield
-        .filter(recorded((r) => r.tackles))
-        .sort(order(most((r) => r.tackles), fewest(games), most(rating)));
+      return outfield.sort(order(most((r) => r.tackles), fewest(games), most(rating)));
     case "passing":
-      return outfield
-        .filter(recorded((r) => r.passAccuracy))
-        .sort(order(most((r) => r.passAccuracy), fewest(games), most(rating)));
+      return outfield.sort(order(most((r) => r.passAccuracy), fewest(games), most(rating)));
     case "keeper":
       return all
         .filter((r) => r.player.playsKeeper)
-        .filter(recorded((r) => r.savePercentage))
         .sort(order(most((r) => r.savePercentage), fewest(games), most(rating)));
   }
 }
+
