@@ -37,8 +37,8 @@ export interface MonthStats {
   shotsFaced: StatValue;
   saves: StatValue;
   /** Ratings */
-  avgRating: StatValue;
   highestRating: StatValue;
+  lowestRating: StatValue;
 }
 
 export interface Player {
