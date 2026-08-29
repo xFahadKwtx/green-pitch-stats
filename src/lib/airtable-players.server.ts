@@ -51,6 +51,26 @@ function groupOf(positions: string[]): Position {
   return positions.includes("GK") ? "GK" : "MID";
 }
 
+/** Parses the "Last 5 Results" field into a fixed 5-item sequence. */
+function parseLast5Results(value: unknown): Array<"W" | "L" | "D" | null> {
+  const text = str(value);
+  if (!text) return [null, null, null, null, null];
+
+  const results: Array<"W" | "L" | "D" | null> = [];
+  for (const raw of text.split("-")) {
+    const token = raw.trim().toUpperCase();
+    if (token === "W" || token === "L" || token === "D") {
+      results.push(token);
+    } else if (token === "") {
+      results.push(null);
+    }
+    if (results.length === 5) break;
+  }
+
+  while (results.length < 5) results.push(null);
+  return results.slice(0, 5);
+}
+
 /** Builds one month of stats. Absent Airtable cells stay null (N/A). */
 function monthStats(fields: Record<string, unknown>): MonthStats {
   const [passes, passesCompleted] = optPair(fields["Passes"]);
@@ -141,6 +161,7 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
       playsKeeper: positions.includes("GK"),
       playsOutfield: positions.some((p) => p !== "GK" && OUTFIELD_GROUP[p] !== undefined),
       points: optNumeric(record.fields["Points Balance"]),
+      last5Results: parseLast5Results(record.fields["Last 5 Results"]),
       stats,
     });
   }
