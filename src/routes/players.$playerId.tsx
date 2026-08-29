@@ -7,6 +7,7 @@ import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/players/$playerId")({
   loader: async ({ context, params }) => {
@@ -198,8 +199,41 @@ function PlayerProfile() {
               </div>
             </section>
           ) : null}
-        </div>
+      </div>
       )}
+
+      <Last5Results results={player.last5Results} />
     </PageShell>
+  );
+}
+
+function Last5Results({
+  results,
+}: {
+  results: Array<"W" | "L" | "D" | null>;
+}) {
+  return (
+    <div className="mt-10 flex justify-center gap-3 sm:gap-4" aria-label="Last 5 results">
+      {results.map((result, index) => {
+        const isEmpty = result === null;
+        return (
+          <div
+            key={index}
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold uppercase text-white sm:h-12 sm:w-12 sm:text-base",
+              result === "W" &&
+                "bg-emerald-500 shadow-[0_0_16px_-4px_rgba(16,185,129,0.5)]",
+              result === "L" &&
+                "bg-rose-500 shadow-[0_0_16px_-4px_rgba(244,63,94,0.5)]",
+              result === "D" &&
+                "bg-gray-500 shadow-[0_0_16px_-4px_rgba(107,114,128,0.5)]",
+              isEmpty && "border border-border/50 bg-transparent text-foreground/30",
+            )}
+          >
+            {result ?? ""}
+          </div>
+        );
+      })}
+    </div>
   );
 }
