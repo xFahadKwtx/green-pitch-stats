@@ -7,6 +7,7 @@ import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/players/$playerId")({
   loader: async ({ context, params }) => {
