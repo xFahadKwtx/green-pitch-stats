@@ -247,7 +247,12 @@ interface I18nValue {
   t: (key: TKey) => string;
 }
 
-const I18nContext = createContext<I18nValue | null>(null);
+// Kept on globalThis so hot module replacement reuses the same context object
+// instead of creating a second one that the mounted provider doesn't fill.
+const globalCtxStore = globalThis as typeof globalThis & {
+  __maaI18nContext?: ReturnType<typeof createContext<I18nValue | null>>;
+};
+const I18nContext = (globalCtxStore.__maaI18nContext ??= createContext<I18nValue | null>(null));
 const STORAGE_KEY = "maa-lang";
 
 export function I18nProvider({ children }: { children: ReactNode }) {
