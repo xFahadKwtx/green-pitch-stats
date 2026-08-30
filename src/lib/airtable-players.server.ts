@@ -24,6 +24,7 @@ const MONTH_TABLES: Record<MonthKey, string> = {
   "2026-06": AIRTABLE_TABLES.statsJune,
   "2026-07": AIRTABLE_TABLES.statsJuly,
   "2026-08": AIRTABLE_TABLES.statsAugust,
+  "2026-09": AIRTABLE_TABLES.statsSeptember,
 };
 
 const OUTFIELD_GROUP: Record<string, Position> = {
