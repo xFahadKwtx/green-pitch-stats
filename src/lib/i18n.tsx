@@ -57,6 +57,7 @@ const dict = {
     "month.2026-06": "June 2026",
     "month.2026-07": "July 2026",
     "month.2026-08": "August 2026",
+    "month.2026-09": "September 2026",
     "pos.GK": "Goalkeeper",
     "pos.DEF": "Defender",
     "pos.MID": "Midfielder",
