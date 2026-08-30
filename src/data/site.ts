@@ -18,10 +18,10 @@ export const announcement: Announcement = {
   tag: "Latest Announcement",
   tagAr: "أحدث إعلان",
   title: "SEPTEMBER SEASON IS LIVE",
-  titleAr: "موسم أغسطس انطلق",
+  titleAr: "موسم سبتمبر انطلق",
   body: "Football bookings every week, full match stats for every player, and monthly awards with real discounts. Register through WhatsApp and secure your spot on the pitch.",
   bodyAr:
-    "أربع حجوزات كل أسبوع، إحصائيات كاملة لكل لاعب، وجوائز شهرية مع خصومات حقيقية. سجّل عبر واتساب واحفظ مكانك في الملعب.",
+    "حجوزات كرة قدم كل أسبوع، إحصائيات كاملة لكل لاعب، وجوائز شهرية مع خصومات حقيقية. سجّل عبر واتساب واحفظ مكانك في الملعب.",
   ctaLabel: "View Upcoming Games",
   ctaLabelAr: "شاهد المباريات القادمة",
   ctaHref: "/upcoming-games",
