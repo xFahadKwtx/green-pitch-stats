@@ -17,9 +17,9 @@ export const announcement: Announcement = {
   id: "ann-2026-08",
   tag: "Latest Announcement",
   tagAr: "أحدث إعلان",
-  title: "August Season Is Live",
+  title: "SEPTEMBER SEASON IS LIVE",
   titleAr: "موسم أغسطس انطلق",
-  body: "Four bookings every week, full match stats for every player, and monthly awards with real discounts. Register through WhatsApp and secure your spot on the pitch.",
+  body: "Football bookings every week, full match stats for every player, and monthly awards with real discounts. Register through WhatsApp and secure your spot on the pitch.",
   bodyAr:
     "أربع حجوزات كل أسبوع، إحصائيات كاملة لكل لاعب، وجوائز شهرية مع خصومات حقيقية. سجّل عبر واتساب واحفظ مكانك في الملعب.",
   ctaLabel: "View Upcoming Games",
