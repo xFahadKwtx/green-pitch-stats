@@ -7,9 +7,9 @@
  * shown as 0.
  */
 
-export type MonthKey = "2026-06" | "2026-07" | "2026-08";
+export type MonthKey = "2026-06" | "2026-07" | "2026-08" | "2026-09";
 
-export const MONTHS: MonthKey[] = ["2026-06", "2026-07", "2026-08"];
+export const MONTHS: MonthKey[] = ["2026-06", "2026-07", "2026-08", "2026-09"];
 
 /** Coarse grouping used for display/sorting only. */
 export type Position = "GK" | "DEF" | "MID" | "FWD";
