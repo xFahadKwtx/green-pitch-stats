@@ -108,7 +108,11 @@ export function aggregateOutfield(player: Player, period: Period): OutfieldAggre
     clearances: total(rows, (r) => r.clearances),
     dribbles: total(rows, (r) => r.dribbles),
     keyPasses: total(rows, (r) => r.keyPasses),
-    chancesCreated: total(rows, (r) => r.chancesCreated),
+    // Derived, never entered manually: per-month Assists + Key Passes.
+    chancesCreated: total(
+      rows,
+      (r) => (r.assists ?? 0) + (r.keyPasses ?? 0),
+    ),
     highestRating: peak(rows, (r) => r.highestRating),
     lowestRating: trough(rows, (r) => r.lowestRating),
   };
