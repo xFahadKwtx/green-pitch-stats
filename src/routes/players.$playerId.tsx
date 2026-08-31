@@ -196,6 +196,10 @@ function PlayerProfile() {
                   label={t("stat.lowRating")}
                   value={ratingOrNA(gkStats.lowestRating, lang)}
                 />
+                <StatCard
+                  label={t("stat.mvp")}
+                  value={numOrNA(gkStats.mvpAwards, lang)}
+                />
               </div>
             </section>
           ) : null}
