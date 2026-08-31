@@ -7,6 +7,7 @@ import { PageHeader, PageShell } from "@/components/ui-kit";
 import { type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/players/")({
   head: () => ({
