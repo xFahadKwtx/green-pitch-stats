@@ -101,7 +101,7 @@ function Home() {
         {[
           { value: players?.length ?? 0, label: t("home.stats.players") },
           { value: 64, label: t("home.stats.matches") },
-          { value: 12, label: t("home.stats.metrics") },
+          { value: 15, label: t("home.stats.metrics") },
         ].map((s) => (
           <div key={s.label} className="glass-card p-4 text-center sm:p-6">
             <p className="stat-number text-3xl text-gold sm:text-5xl">{s.value}</p>
