@@ -86,6 +86,61 @@ export interface KeeperAggregate {
   lowestRating: StatValue;
 }
 
+/**
+ * JUNE and JULY have no recorded shooting statistics in Airtable, so a 0 there
+ * means "not recorded". For outfield players with at least one goal we show an
+ * estimate instead. Language-independent: this is pure data logic.
+ * If real values ever appear for those months, they take priority.
+ */
+const ESTIMATED_MONTHS = new Set<MonthKey>(["2026-06", "2026-07"]);
+
+const SHOT_MAP: Record<number, [number, number]> = {
+  1: [3, 2],
+  2: [5, 3],
+  3: [8, 5],
+  4: [10, 6],
+  5: [13, 8],
+  6: [15, 9],
+  7: [18, 11],
+  8: [20, 12],
+  9: [23, 14],
+  10: [25, 15],
+};
+
+/** Effective [shots, shotsOnTarget] for one month of a player's stats. */
+function effectiveShots(
+  player: Player,
+  month: MonthKey,
+  row: MonthStats,
+): [number, number] {
+  const shots = row.shots ?? 0;
+  const sot = row.shotsOnTarget ?? 0;
+
+  const needsEstimate =
+    ESTIMATED_MONTHS.has(month) &&
+    player.playsOutfield &&
+    !player.playsKeeper &&
+    shots === 0 &&
+    sot === 0;
+
+  const goals = row.goals ?? 0;
+  if (!needsEstimate || goals < 1) return [shots, sot];
+
+  const mapped = SHOT_MAP[goals];
+  let estShots: number;
+  let estSot: number;
+  if (mapped) {
+    [estShots, estSot] = mapped;
+  } else {
+    estShots = Math.round(goals * 2.5);
+    estSot = Math.round(estShots * 0.6);
+  }
+
+  estSot = Math.max(estSot, goals);
+  estShots = Math.max(estShots, estSot);
+  return [estShots, estSot];
+}
+
 export function aggregateOutfield(player: Player, period: Period): OutfieldAggregate {
   const months = recordedMonths(player, period);
   const rows = months.map((m) => player.stats[m]!);
@@ -93,14 +148,23 @@ export function aggregateOutfield(player: Player, period: Period): OutfieldAggre
   const passes = total(rows, (r) => r.passes);
   const passesCompleted = total(rows, (r) => r.passesCompleted);
 
+  let shots = 0;
+  let shotsOnTarget = 0;
+  months.forEach((month, index) => {
+    const [s, sot] = effectiveShots(player, month, rows[index]!);
+    shots += s;
+    shotsOnTarget += sot;
+  });
+
   return {
     months,
     gamesPlayed: total(rows, (r) => r.gamesPlayed),
     mvpAwards: total(rows, (r) => r.mvpAwards),
     goals: total(rows, (r) => r.goals),
     assists: total(rows, (r) => r.assists),
-    shots: total(rows, (r) => r.shots),
-    shotsOnTarget: total(rows, (r) => r.shotsOnTarget),
+    shots,
+    shotsOnTarget,
+
     passes,
     passesCompleted,
     passAccuracy: ratio(passesCompleted, passes),
