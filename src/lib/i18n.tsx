@@ -21,6 +21,8 @@ const dict = {
     "nav.store": "Store",
     "nav.rewards": "Rewards",
     "nav.contact": "Contact",
+    "nav.compare": "Compare Players",
+
     menu: "Menu",
     close: "Close",
     "home.hero.title": "Every touch counted.",
