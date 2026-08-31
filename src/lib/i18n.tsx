@@ -47,6 +47,17 @@ const dict = {
     "players.count": "players",
     "players.empty": "No players match your search.",
     "players.viewProfile": "View profile",
+    "compare.title": "Player Comparison",
+    "compare.sub":
+      "Pick two players to see their statistics side by side for the same month.",
+    "compare.player1": "Player 1",
+    "compare.player2": "Player 2",
+    "compare.select": "Select a player",
+    "compare.statistic": "Statistic",
+    "compare.pickBoth": "Select two players to start comparing.",
+    "compare.noShared":
+      "No shared statistics to display for these two players in this period.",
+
     "profile.points": "Points Balance",
     "profile.back": "All players",
     "profile.stats": "Statistics",
