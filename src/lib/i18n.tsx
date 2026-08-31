@@ -115,7 +115,7 @@ const dict = {
     "rewards.title": "Rewards",
     "rewards.sub": "Benefits, offers and the official competition criteria.",
     "rewards.mvp": "Match MVP Reward",
-    "rewards.mvp.body": "The Match MVP plays the next match only for free.",
+    "rewards.mvp.body": "The MVP plays the next match only for free.",
     "rewards.potm": "Player of the Month Reward",
     "rewards.potm.body": "The Player of the Month gets a 50% discount for one full month.",
     "rewards.challenge": "Position Challenge Reward",
