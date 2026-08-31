@@ -133,6 +133,8 @@ const dict = {
     "nav.store": "المتجر",
     "nav.rewards": "المكافآت",
     "nav.contact": "اتصل بنا",
+    "nav.compare": "مقارنة اللاعبين",
+
     menu: "القائمة",
     close: "إغلاق",
     "home.hero.title": "كل لمسة محسوبة.",
