@@ -117,25 +117,19 @@ function RewardsPage() {
           body={t("rewards.challenge.body")}
           value={lang === "ar" ? "خصم 50%" : "50% Off"}
         >
-          {positionChallenges.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
-              {t("rewards.challenge.soon")}
-            </p>
-          ) : (
-            <ul className="grid gap-2">
-              {positionChallenges.map((c) => (
-                <li
-                  key={c.position}
-                  className="flex items-start gap-3 rounded-xl border border-border bg-glass px-4 py-3 text-sm"
-                >
-                  <span className="stat-number shrink-0 text-gold">{c.position}</span>
-                  <span className="min-w-0 text-muted-foreground">
-                    {lang === "ar" ? c.challengeAr : c.challenge}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="grid gap-2">
+            {positionChallenges.map((c) => (
+              <li
+                key={c.position}
+                className="flex items-start gap-3 rounded-xl border border-border bg-glass px-4 py-3 text-sm"
+              >
+                <span className="stat-number shrink-0 text-gold">{c.position}</span>
+                <span className="min-w-0 text-muted-foreground">
+                  {lang === "ar" ? c.challengeAr : c.challenge}
+                </span>
+              </li>
+            ))}
+          </ul>
         </RewardCard>
         <RewardCard
           icon={UserPlus}
