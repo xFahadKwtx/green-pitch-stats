@@ -4,7 +4,7 @@ import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { PageHeader, PageShell } from "@/components/ui-kit";
-import { type Position } from "@/data/types";
+import { type Player, type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,32 @@ const POSITION_OPTIONS: { value: Position | "all"; labelKey: TKey }[] = [
   { value: "FWD", labelKey: "pos.FWD" },
 ];
 
+/** Sub-position tokens that map to each main category. Case-insensitive. */
+const CATEGORY_TOKENS: Record<Exclude<Position, "all">, string[]> = {
+  GK: ["GK"],
+  DEF: ["CB", "RB", "LB", "RWB", "LWB", "DEF"],
+  MID: ["CM", "CDM", "CAM", "RM", "LM", "MID"],
+  FWD: ["ST", "CF", "RW", "LW", "FWD"],
+};
+
+/** Splits a raw position string on any separator and normalizes each token. */
+function normalizePositions(raw: string[]): string[] {
+  const tokens: string[] = [];
+  for (const entry of raw) {
+    for (const part of entry.split(/[•\-/,\s]+/)) {
+      const tag = part.trim().toUpperCase();
+      if (tag) tokens.push(tag);
+    }
+  }
+  return tokens;
+}
+
+/** True when the player belongs to the given main category by ANY of their tokens. */
+function playerMatchesCategory(p: Player, cat: Position): boolean {
+  const tokens = normalizePositions(p.positions);
+  return CATEGORY_TOKENS[cat].some((token) => tokens.includes(token));
+}
+
 function PlayersPage() {
   const { t, lang } = useI18n();
   const [query, setQuery] = useState("");
@@ -59,7 +85,7 @@ function PlayersPage() {
       : players;
     return position === "all"
       ? byText
-      : byText.filter((p) => p.positionGroup === position);
+      : byText.filter((p) => playerMatchesCategory(p, position));
   }, [players, query, position]);
 
   return (
