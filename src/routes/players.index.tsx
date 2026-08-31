@@ -4,6 +4,7 @@ import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { PageHeader, PageShell } from "@/components/ui-kit";
+import { type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 
