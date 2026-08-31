@@ -4,8 +4,10 @@ import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { PageHeader, PageShell } from "@/components/ui-kit";
+import { type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/players/")({
   head: () => ({
@@ -34,18 +36,31 @@ export const Route = createFileRoute("/players/")({
   component: PlayersPage,
 });
 
+const POSITION_OPTIONS: { value: Position | "all"; labelKey: TKey }[] = [
+  { value: "all", labelKey: "filter.all" },
+  { value: "GK", labelKey: "pos.GK" },
+  { value: "DEF", labelKey: "pos.DEF" },
+  { value: "MID", labelKey: "pos.MID" },
+  { value: "FWD", labelKey: "pos.FWD" },
+];
+
 function PlayersPage() {
   const { t, lang } = useI18n();
   const [query, setQuery] = useState("");
+  const [position, setPosition] = useState<Position | "all">("all");
   const { data: players } = useSuspenseQuery(playersQueryOptions);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return players;
-    return players.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.nameAr.includes(query.trim()),
-    );
-  }, [players, query]);
+    const byText = q
+      ? players.filter(
+          (p) => p.name.toLowerCase().includes(q) || p.nameAr.includes(query.trim()),
+        )
+      : players;
+    return position === "all"
+      ? byText
+      : byText.filter((p) => p.positionGroup === position);
+  }, [players, query, position]);
 
   return (
     <PageShell>
@@ -66,9 +81,33 @@ function PlayersPage() {
         />
       </div>
 
-      <p className="mb-4 text-xs tracking-[0.16em] text-muted-foreground uppercase">
-        {results.length} {t("players.count")}
-      </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs tracking-[0.16em] text-muted-foreground uppercase">
+          {results.length} {t("players.count")}
+        </p>
+        <div
+          role="group"
+          aria-label={t("players.search")}
+          className="no-scrollbar flex max-w-full gap-1.5 overflow-x-auto rounded-full border border-border bg-glass p-1"
+        >
+          {POSITION_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => setPosition(o.value)}
+              aria-pressed={position === o.value}
+              className={cn(
+                "min-h-9 rounded-full px-3 text-xs font-semibold tracking-wide whitespace-nowrap transition-colors",
+                position === o.value
+                  ? "bg-gold text-primary-foreground shadow-gold"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t(o.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {results.length === 0 ? (
         <p className="glass-card p-8 text-center text-muted-foreground">
