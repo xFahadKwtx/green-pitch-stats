@@ -21,6 +21,8 @@ const dict = {
     "nav.store": "Store",
     "nav.rewards": "Rewards",
     "nav.contact": "Contact",
+    "nav.compare": "Compare Players",
+
     menu: "Menu",
     close: "Close",
     "home.hero.title": "Every touch counted.",
@@ -47,6 +49,17 @@ const dict = {
     "players.count": "players",
     "players.empty": "No players match your search.",
     "players.viewProfile": "View profile",
+    "compare.title": "Player Comparison",
+    "compare.sub":
+      "Pick two players to see their statistics side by side for the same month.",
+    "compare.player1": "Player 1",
+    "compare.player2": "Player 2",
+    "compare.select": "Select a player",
+    "compare.statistic": "Statistic",
+    "compare.pickBoth": "Select two players to start comparing.",
+    "compare.noShared":
+      "No shared statistics to display for these two players in this period.",
+
     "profile.points": "Points Balance",
     "profile.back": "All players",
     "profile.stats": "Statistics",
@@ -133,6 +146,8 @@ const dict = {
     "nav.store": "المتجر",
     "nav.rewards": "المكافآت",
     "nav.contact": "اتصل بنا",
+    "nav.compare": "مقارنة اللاعبين",
+
     menu: "القائمة",
     close: "إغلاق",
     "home.hero.title": "كل لمسة محسوبة.",
@@ -159,6 +174,15 @@ const dict = {
     "players.count": "لاعب",
     "players.empty": "لا يوجد لاعب مطابق للبحث.",
     "players.viewProfile": "عرض الملف",
+    "compare.title": "مقارنة اللاعبين",
+    "compare.sub": "اختر لاعبين لعرض إحصائياتهما جنباً إلى جنب لنفس الشهر.",
+    "compare.player1": "اللاعب الأول",
+    "compare.player2": "اللاعب الثاني",
+    "compare.select": "اختر لاعباً",
+    "compare.statistic": "الإحصائية",
+    "compare.pickBoth": "اختر لاعبين للبدء بالمقارنة.",
+    "compare.noShared": "لا توجد إحصائيات مشتركة لعرضها لهذين اللاعبين في هذه الفترة.",
+
     "profile.points": "رصيد النقاط",
     "profile.back": "كل اللاعبين",
     "profile.stats": "الإحصائيات",

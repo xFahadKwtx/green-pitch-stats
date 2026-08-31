@@ -10,6 +10,8 @@ const links: { to: string; key: TKey }[] = [
   { to: "/", key: "nav.home" },
   { to: "/upcoming-games", key: "nav.games" },
   { to: "/players", key: "nav.players" },
+  { to: "/compare", key: "nav.compare" },
+
   { to: "/leaderboard", key: "nav.leaderboard" },
   { to: "/store", key: "nav.store" },
   { to: "/rewards", key: "nav.rewards" },
