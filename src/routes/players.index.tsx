@@ -85,7 +85,7 @@ function PlayersPage() {
       : players;
     return position === "all"
       ? byText
-      : byText.filter((p) => p.positionGroup === position);
+      : byText.filter((p) => playerMatchesCategory(p, position));
   }, [players, query, position]);
 
   return (
