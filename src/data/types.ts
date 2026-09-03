@@ -113,3 +113,22 @@ export interface RecordEntry {
   holderNameEn: string | null;
   holderNameAr: string | null;
 }
+
+/** A store product coming from the Airtable "Store" table. */
+export interface StoreItem {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  requiredPoints: number | null;
+  imageUrl: string | null;
+}
+
+/** A dynamic Airtable "Store Category" with its visible products. */
+export interface StoreCategorySection {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  products: StoreItem[];
+}

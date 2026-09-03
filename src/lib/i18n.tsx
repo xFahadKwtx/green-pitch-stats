@@ -120,6 +120,9 @@ const dict = {
     "store.empty.body":
       "Products will be published here soon. Follow us on WhatsApp or Instagram for the drop.",
     "store.notify": "Ask about the store",
+    "store.points": "Points",
+    "store.order": "Order Product",
+    "store.other": "More Rewards",
     "rewards.title": "Rewards",
     "rewards.sub": "Benefits, offers and the official competition criteria.",
     "rewards.mvp": "Player of the Match Reward",
@@ -253,6 +256,9 @@ const dict = {
     "store.empty.body":
       "سيتم نشر المنتجات هنا قريباً. تابعنا على واتساب أو إنستقرام لمعرفة موعد الإطلاق.",
     "store.notify": "استفسر عن المتجر",
+    "store.points": "نقاط",
+    "store.order": "طلب المنتج",
+    "store.other": "مكافآت أخرى",
     "rewards.title": "المكافآت",
     "rewards.sub": "المزايا والعروض ومعايير المنافسة الرسمية.",
     "rewards.mvp": "مكافأة رجل المباراة",
