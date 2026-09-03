@@ -32,46 +32,46 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:h-20 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:h-20 sm:px-6">
         <Link
           to="/"
           onClick={() => setOpen(false)}
-          className="flex min-w-0 items-center gap-3"
+          className="flex min-w-0 shrink-0 items-center gap-2"
         >
           <img
             src={logoAsset.url}
             alt={t("brand")}
-            className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12"
+            className="h-9 w-9 shrink-0 object-contain sm:h-11 sm:w-11"
           />
           <span className="min-w-0">
-            <span className="block truncate font-display text-base leading-tight font-bold tracking-wide uppercase sm:text-xl">
+            <span className="block truncate font-display text-sm leading-tight font-bold tracking-wide uppercase sm:text-lg">
               {t("brand")}
             </span>
-            <span className="hidden text-[11px] tracking-[0.2em] text-muted-foreground uppercase sm:block">
+            <span className="hidden text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:block">
               {t("brandTag")}
             </span>
           </span>
         </Link>
 
-        <nav className="ms-auto hidden items-center gap-1 lg:flex">
+        <nav className="ms-auto hidden flex-1 items-center justify-end gap-0.5 lg:flex">
           {links.map((l) => (
             <Link
               key={l.to}
               to={l.to}
               activeOptions={{ exact: l.to === "/" }}
-              className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
+              className="whitespace-nowrap rounded-full px-2 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
             >
               {t(l.key)}
             </Link>
           ))}
         </nav>
 
-        <div className="ms-auto flex items-center gap-2 lg:ms-3">
+        <div className="ms-auto flex shrink-0 items-center gap-2 lg:ms-2">
           <button
             type="button"
             onClick={toggle}
             aria-label="Switch language"
-            className="flex h-11 items-center gap-2 rounded-full border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-gold/60 hover:text-gold"
+            className="flex h-10 items-center gap-1.5 rounded-full border border-border px-2.5 text-[13px] font-semibold text-foreground transition-colors hover:border-gold/60 hover:text-gold"
           >
             <Globe className="h-4 w-4" aria-hidden />
             <span>{lang === "en" ? "AR" : "EN"}</span>
@@ -81,7 +81,7 @@ export function SiteHeader() {
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? t("close") : t("menu")}
             aria-expanded={open}
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-border text-foreground lg:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-border text-foreground lg:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
