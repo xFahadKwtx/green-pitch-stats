@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { Menu, X, Globe } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Menu, X, Globe, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import logoAsset from "@/assets/logo.png.asset.json";
 import { useI18n, type TKey } from "@/lib/i18n";
@@ -11,7 +11,6 @@ const links: { to: string; key: TKey }[] = [
   { to: "/upcoming-games", key: "nav.games" },
   { to: "/players", key: "nav.players" },
   { to: "/compare", key: "nav.compare" },
-
   { to: "/leaderboard", key: "nav.leaderboard" },
   { to: "/records", key: "nav.records" },
   { to: "/store", key: "nav.store" },
@@ -19,9 +18,16 @@ const links: { to: string; key: TKey }[] = [
   { to: "/contact", key: "nav.contact" },
 ];
 
+// Primary items always visible on desktop; lower-priority items collapse
+// into a "More" dropdown so labels never wrap onto a second line.
+const primaryLinks = links.slice(0, 6);
+const moreLinks = links.slice(6);
+
 export function SiteHeader() {
   const { t, lang, toggle } = useI18n();
   const [open, setOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -29,6 +35,24 @@ export function SiteHeader() {
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
@@ -53,20 +77,53 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="ms-auto hidden items-center gap-1 lg:flex">
-          {links.map((l) => (
+        <nav className="ms-auto hidden items-center gap-0.5 flex-nowrap lg:flex">
+          {primaryLinks.map((l) => (
             <Link
               key={l.to}
               to={l.to}
               activeOptions={{ exact: l.to === "/" }}
-              className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
+              className="whitespace-nowrap rounded-full px-2.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
             >
               {t(l.key)}
             </Link>
           ))}
+          <div className="relative" ref={moreRef}>
+            <button
+              type="button"
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              className="flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground"
+            >
+              {t("nav.more")}
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")}
+                aria-hidden
+              />
+            </button>
+            {moreOpen && (
+              <div
+                role="menu"
+                className="absolute end-0 mt-2 min-w-[12rem] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-1 shadow-xl backdrop-blur-xl"
+              >
+                {moreLinks.map((l) => (
+                  <Link
+                    key={l.to}
+                    to={l.to}
+                    activeOptions={{ exact: l.to === "/" }}
+                    onClick={() => setMoreOpen(false)}
+                    className="block whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
+                  >
+                    {t(l.key)}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
 
-        <div className="ms-auto flex items-center gap-2 lg:ms-3">
+        <div className="ms-auto flex items-center gap-2 lg:ms-2">
           <button
             type="button"
             onClick={toggle}
