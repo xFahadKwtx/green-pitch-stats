@@ -62,6 +62,10 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
     }
   }
 
+  for (const section of sections.values()) {
+    section.products.sort((a, b) => (a.requiredPoints ?? 0) - (b.requiredPoints ?? 0));
+  }
+
   return [...sections.values()].filter((section) => section.products.length > 0);
 }
 
