@@ -39,8 +39,6 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
     sections.set(row.id, { id: row.id, nameEn, nameAr, products: [] });
   }
 
-  const uncategorized: StoreItem[] = [];
-
   for (const row of productRows) {
     if (row.fields["Show On Website"] !== true) continue;
 
@@ -58,17 +56,12 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
       imageUrl: firstImageUrl(row.fields["Product Image"]),
     };
 
-    const categoryIds = linkIds(row.fields["Category"]).filter((id) => sections.has(id));
-    if (categoryIds.length === 0) {
-      uncategorized.push(product);
-      continue;
+    for (const categoryId of linkIds(row.fields["Category"])) {
+      const section = sections.get(categoryId);
+      if (section) section.products.push(product);
     }
-    for (const id of categoryIds) sections.get(id)!.products.push(product);
   }
 
-  const result = [...sections.values()].filter((s) => s.products.length > 0);
-  if (uncategorized.length > 0) {
-    result.push({ id: "uncategorized", nameEn: "", nameAr: "", products: uncategorized });
-  }
-  return result;
+  return [...sections.values()].filter((section) => section.products.length > 0);
 }
+
