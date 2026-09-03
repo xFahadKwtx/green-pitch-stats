@@ -67,10 +67,7 @@ function RecordCard({ record }: { record: RecordEntry }) {
       </header>
 
       <div className="relative">
-        <p className="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-          {t("records.holder")}
-        </p>
-        <p className="stat-number mt-1 text-5xl font-bold text-gold sm:text-6xl">
+        <p className="stat-number text-5xl font-bold text-gold sm:text-6xl">
           {record.value}
         </p>
       </div>
