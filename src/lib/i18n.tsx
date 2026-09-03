@@ -22,6 +22,7 @@ const dict = {
     "nav.rewards": "Rewards",
     "nav.contact": "Contact",
     "nav.compare": "Compare Players",
+    "nav.records": "Records",
 
     menu: "Menu",
     close: "Close",
@@ -59,6 +60,13 @@ const dict = {
     "compare.pickBoth": "Select two players to start comparing.",
     "compare.noShared":
       "No shared statistics to display for these two players in this period.",
+    "records.title": "Records",
+    "records.sub":
+      "The marks to chase. Every record here can be broken — claim it and become the new holder.",
+    "records.eyebrow": "Breakable Records",
+    "records.holder": "Current record holder",
+    "records.unclaimed": "No player has broken this record yet",
+    "records.empty": "No records published yet.",
 
     "profile.points": "Points Balance",
     "profile.back": "All players",
