@@ -1,5 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Gift, Percent, Target, Trophy, UserPlus } from "lucide-react";
+import {
+  Clock,
+  Coins,
+  Flame,
+  Gift,
+  MinusCircle,
+  PauseCircle,
+  Percent,
+  ShoppingBag,
+  ShieldAlert,
+  Star,
+  Target,
+  Trophy,
+  UserPlus,
+} from "lucide-react";
 
 import { Badge, PageHeader, PageShell, SectionTitle } from "@/components/ui-kit";
 import { positionChallenges } from "@/data/site";
