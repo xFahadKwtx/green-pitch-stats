@@ -273,19 +273,23 @@ function RewardsPage() {
           icon={Trophy}
           title={t("rewards.mvp")}
           body={t("rewards.mvp.body")}
-          value={lang === "ar" ? "مباراة مجانية" : "1 Free Match"}
+          value={lang === "ar" ? "مباراة مجانية أو 8 نقاط" : "Free Match OR 8 Points"}
         />
         <RewardCard
           icon={Percent}
           title={t("rewards.potm")}
           body={t("rewards.potm.body")}
-          value={lang === "ar" ? "خصم 50% / شهر" : "50% Off / Month"}
+          value={
+            lang === "ar"
+              ? "خصم 50% لمدة شهر أو 70 نقطة"
+              : "50% Off One Month OR 70 Points"
+          }
         />
         <RewardCard
           icon={Target}
           title={t("rewards.challenge")}
           body={t("rewards.challenge.body")}
-          value={lang === "ar" ? "خصم 50%" : "50% Off"}
+          value={lang === "ar" ? "1.5 نقطة" : "1.5 Points"}
         >
           <ul className="grid gap-2">
             {positionChallenges.map((c) => (
@@ -305,7 +309,7 @@ function RewardsPage() {
           icon={UserPlus}
           title={t("rewards.bring")}
           body={t("rewards.bring.body")}
-          value={lang === "ar" ? "خصم 10%" : "10% Off"}
+          value={lang === "ar" ? "0.25 نقطة لكل لاعب" : "0.25 Points per Player"}
         />
       </div>
 
