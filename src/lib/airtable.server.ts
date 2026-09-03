@@ -16,6 +16,7 @@ export const AIRTABLE_TABLES = {
   statsAugust: "tbl78eFjDG3gqdPcX",
   statsSeptember: "tblMNANv3vwA0Awnf",
   upcomingGames: "tblWuIk1o1zgvv5le",
+  records: "tbl2emiWIdMwtnKq5",
 } as const;
 
 export interface AirtableRecord {

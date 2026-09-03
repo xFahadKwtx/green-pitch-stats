@@ -100,3 +100,16 @@ export interface PositionChallenge {
   challenge: string;
   challengeAr: string;
 }
+
+/**
+ * A breakable football record from the Airtable "Records" table.
+ * `holderName*` is null when no player has claimed the record yet.
+ */
+export interface RecordEntry {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  value: string;
+  holderNameEn: string | null;
+  holderNameAr: string | null;
+}
