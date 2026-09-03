@@ -23,6 +23,8 @@ const dict = {
     "nav.contact": "Contact",
     "nav.compare": "Compare Players",
     "nav.records": "Records",
+    "nav.more": "More",
+
 
     menu: "Menu",
     close: "Close",
