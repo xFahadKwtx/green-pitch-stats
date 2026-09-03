@@ -155,6 +155,7 @@ const dict = {
     "nav.rewards": "المكافآت",
     "nav.contact": "اتصل بنا",
     "nav.compare": "مقارنة اللاعبين",
+    "nav.records": "الأرقام القياسية",
 
     menu: "القائمة",
     close: "إغلاق",
@@ -190,6 +191,13 @@ const dict = {
     "compare.statistic": "الإحصائية",
     "compare.pickBoth": "اختر لاعبين للبدء بالمقارنة.",
     "compare.noShared": "لا توجد إحصائيات مشتركة لعرضها لهذين اللاعبين في هذه الفترة.",
+    "records.title": "الأرقام القياسية",
+    "records.sub":
+      "العلامات التي يجب اللحاق بها. كل رقم هنا قابل للكسر — اكسره وكن صاحب الرقم الجديد.",
+    "records.eyebrow": "أرقام قياسية قابلة للكسر",
+    "records.holder": "صاحب الرقم الحالي",
+    "records.unclaimed": "لم يكسر أي لاعب هذا الرقم القياسي حتى الآن",
+    "records.empty": "لا توجد أرقام قياسية منشورة بعد.",
 
     "profile.points": "رصيد النقاط",
     "profile.back": "كل اللاعبين",
