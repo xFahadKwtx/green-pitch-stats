@@ -341,6 +341,51 @@ function RewardsPage() {
           ))}
         </div>
       </div>
+
+      <div className="mt-12">
+        <SectionTitle>{lang === "ar" ? "نظام النقاط" : "Points System"}</SectionTitle>
+        <p className="mb-5 text-sm text-muted-foreground">
+          {lang === "ar"
+            ? "كيف تُمنح النقاط وتُخصم وكيف تستفيد منها في المستطيل الأخضر."
+            : "How points are earned, deducted, and used in the Green Rectangle."}
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {pointsSections.map((section) => (
+            <article
+              key={section.titleEn}
+              className="glass-card flex flex-col gap-3 p-5 transition-transform duration-300 hover:-translate-y-0.5 hover:border-gold/40 sm:p-6"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-gold/30 bg-gold/10">
+                  <section.icon className="h-5 w-5 text-gold" aria-hidden />
+                </span>
+                <h3 className="min-w-0 text-lg font-bold tracking-wide uppercase sm:text-xl">
+                  {lang === "ar" ? section.titleAr : section.titleEn}
+                </h3>
+              </div>
+              {section.introEn ? (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {lang === "ar" ? section.introAr : section.introEn}
+                </p>
+              ) : null}
+              <ul className="grid gap-2">
+                {(lang === "ar" ? section.itemsAr : section.itemsEn).map((item) => (
+                  <li
+                    key={item}
+                    className="flex items-start gap-3 rounded-xl border border-border bg-glass px-4 py-3 text-sm"
+                  >
+                    <span
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gold"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 text-muted-foreground">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </div>
     </PageShell>
   );
 }
