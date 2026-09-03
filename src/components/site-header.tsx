@@ -13,6 +13,7 @@ const links: { to: string; key: TKey }[] = [
   { to: "/compare", key: "nav.compare" },
 
   { to: "/leaderboard", key: "nav.leaderboard" },
+  { to: "/records", key: "nav.records" },
   { to: "/store", key: "nav.store" },
   { to: "/rewards", key: "nav.rewards" },
   { to: "/contact", key: "nav.contact" },
