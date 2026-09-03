@@ -90,11 +90,14 @@ export function SiteHeader() {
 
       <div
         className={cn(
-          "overflow-hidden border-t border-border/70 bg-background/95 transition-[max-height] duration-300 lg:hidden",
-          open ? "max-h-[26rem]" : "max-h-0",
+          "overflow-y-auto border-t border-border/70 bg-background/95 transition-[max-height] duration-300 lg:hidden",
+          open
+            ? "max-h-[calc(100dvh-4rem)] sm:max-h-[calc(100dvh-5rem)]"
+            : "max-h-0",
         )}
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <nav className="mx-auto grid max-w-6xl gap-1 px-4 py-3">
+        <nav className="mx-auto grid max-w-6xl gap-1 px-4 py-3 pb-10">
           {links.map((l) => (
             <Link
               key={l.to}
