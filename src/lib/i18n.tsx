@@ -158,6 +158,8 @@ const dict = {
     "nav.contact": "اتصل بنا",
     "nav.compare": "مقارنة اللاعبين",
     "nav.records": "الأرقام القياسية",
+    "nav.more": "المزيد",
+
 
     menu: "القائمة",
     close: "إغلاق",
