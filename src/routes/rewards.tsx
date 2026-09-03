@@ -179,17 +179,6 @@ const pointsSections: {
     ],
   },
   {
-    icon: Percent,
-    titleEn: "Deductions & Rounding",
-    titleAr: "الخصومات والتقريب",
-    itemsEn: [
-      "If a player receives any point deduction, the points earned for that match must always be rounded down to the lower official 0.25-point value, with no exceptions.",
-    ],
-    itemsAr: [
-      "إذا حصل اللاعب على أي خصم من النقاط، يتم دائماً تقريب نقاطه المكتسبة في تلك المباراة إلى أدنى قيمة رسمية بمقدار 0.25 نقطة، دون أي استثناء.",
-    ],
-  },
-  {
     icon: PauseCircle,
     titleEn: "Inactivity Deductions",
     titleAr: "خصومات الخمول",
