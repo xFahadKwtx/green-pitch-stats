@@ -22,6 +22,7 @@ const dict = {
     "nav.rewards": "Rewards",
     "nav.contact": "Contact",
     "nav.compare": "Compare Players",
+    "nav.records": "Records",
 
     menu: "Menu",
     close: "Close",
@@ -59,6 +60,13 @@ const dict = {
     "compare.pickBoth": "Select two players to start comparing.",
     "compare.noShared":
       "No shared statistics to display for these two players in this period.",
+    "records.title": "Records",
+    "records.sub":
+      "The marks to chase. Every record here can be broken — claim it and become the new holder.",
+    "records.eyebrow": "Breakable Records",
+    "records.holder": "Current record holder",
+    "records.unclaimed": "No player has broken this record yet",
+    "records.empty": "No records published yet.",
 
     "profile.points": "Points Balance",
     "profile.back": "All players",
@@ -147,6 +155,7 @@ const dict = {
     "nav.rewards": "المكافآت",
     "nav.contact": "اتصل بنا",
     "nav.compare": "مقارنة اللاعبين",
+    "nav.records": "الأرقام القياسية",
 
     menu: "القائمة",
     close: "إغلاق",
@@ -182,6 +191,13 @@ const dict = {
     "compare.statistic": "الإحصائية",
     "compare.pickBoth": "اختر لاعبين للبدء بالمقارنة.",
     "compare.noShared": "لا توجد إحصائيات مشتركة لعرضها لهذين اللاعبين في هذه الفترة.",
+    "records.title": "الأرقام القياسية",
+    "records.sub":
+      "العلامات التي يجب اللحاق بها. كل رقم هنا قابل للكسر — اكسره وكن صاحب الرقم الجديد.",
+    "records.eyebrow": "أرقام قياسية قابلة للكسر",
+    "records.holder": "صاحب الرقم الحالي",
+    "records.unclaimed": "لم يكسر أي لاعب هذا الرقم القياسي حتى الآن",
+    "records.empty": "لا توجد أرقام قياسية منشورة بعد.",
 
     "profile.points": "رصيد النقاط",
     "profile.back": "كل اللاعبين",

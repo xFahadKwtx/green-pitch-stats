@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CompareRouteImport } from './routes/compare'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as RecordsRouteImport } from './routes/records'
 import { Route as RewardsRouteImport } from './routes/rewards'
 import { Route as StoreRouteImport } from './routes/store'
 import { Route as UpcomingGamesRouteImport } from './routes/upcoming-games'
@@ -37,6 +38,11 @@ const ContactRoute = ContactRouteImport.update({
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecordsRoute = RecordsRouteImport.update({
+  id: '/records',
+  path: '/records',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RewardsRoute = RewardsRouteImport.update({
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/contact'
     | '/leaderboard'
+    | '/records'
     | '/rewards'
     | '/store'
     | '/upcoming-games'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/contact'
     | '/leaderboard'
+    | '/records'
     | '/rewards'
     | '/store'
     | '/upcoming-games'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/compare'
     | '/contact'
     | '/leaderboard'
+    | '/records'
     | '/rewards'
     | '/store'
     | '/upcoming-games'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   CompareRoute: typeof CompareRoute
   ContactRoute: typeof ContactRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  RecordsRoute: typeof RecordsRoute
   RewardsRoute: typeof RewardsRoute
   StoreRoute: typeof StoreRoute
   UpcomingGamesRoute: typeof UpcomingGamesRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/leaderboard'
       fullPath: '/leaderboard'
       preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/records': {
+      id: '/records'
+      path: '/records'
+      fullPath: '/records'
+      preLoaderRoute: typeof RecordsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rewards': {
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompareRoute: CompareRoute,
   ContactRoute: ContactRoute,
   LeaderboardRoute: LeaderboardRoute,
+  RecordsRoute: RecordsRoute,
   RewardsRoute: RewardsRoute,
   StoreRoute: StoreRoute,
   UpcomingGamesRoute: UpcomingGamesRoute,
