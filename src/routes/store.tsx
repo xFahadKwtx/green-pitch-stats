@@ -88,7 +88,7 @@ function PriceTag({
 
   if (discounted) {
     return (
-      <span className="flex items-baseline gap-2">
+      <span className="flex items-baseline gap-2 whitespace-nowrap">
         <span className="text-sm font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-base">
           {pointsLabel(product.requiredPoints, lang)}
         </span>
@@ -100,7 +100,7 @@ function PriceTag({
   }
 
   return (
-    <span className="stat-number text-xl text-gold sm:text-2xl">
+    <span className="stat-number text-xl text-gold sm:text-2xl whitespace-nowrap">
       {pointsLabel(product.requiredPoints, lang)}
     </span>
   );
@@ -126,7 +126,7 @@ function ProductCard({ product }: { product: StoreItem }) {
             <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
           </div>
         )}
-        <span className="absolute top-2 end-2 inline-flex items-center gap-1 rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
+        <span className="absolute top-2 end-2 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
           <PriceTag product={product} variant="badge" />
         </span>
       </div>
@@ -139,8 +139,10 @@ function ProductCard({ product }: { product: StoreItem }) {
           ) : null}
         </div>
 
-        <div className="mt-auto flex items-end justify-between gap-2 border-t border-border pt-3">
-          <PriceTag product={product} variant="full" />
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
+          <span className="min-w-0 shrink whitespace-nowrap">
+            <PriceTag product={product} variant="full" />
+          </span>
           <a
             href={orderLink(product, lang)}
             target="_blank"
