@@ -140,7 +140,7 @@ function ProductCard({ product }: { product: StoreItem }) {
         </div>
 
         <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
-          <span className="min-w-0 shrink whitespace-nowrap text-xl font-bold leading-none text-gold sm:text-2xl">
+          <span className="min-w-0 shrink whitespace-nowrap">
             <PriceTag product={product} variant="full" />
           </span>
           <a
