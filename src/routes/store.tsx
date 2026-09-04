@@ -88,7 +88,7 @@ function PriceTag({
 
   if (discounted) {
     return (
-      <span className="flex flex-col gap-0.5 leading-none">
+      <span className="flex flex-col gap-1 leading-tight">
         <span className="text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm">
           {pointsLabel(product.requiredPoints, lang)}
         </span>
@@ -100,7 +100,7 @@ function PriceTag({
   }
 
   return (
-    <span className="stat-number text-xl text-gold sm:text-2xl">
+    <span className="stat-number whitespace-nowrap text-xl text-gold sm:text-2xl">
       {pointsLabel(product.requiredPoints, lang)}
     </span>
   );
