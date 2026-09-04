@@ -53,6 +53,59 @@ function orderLink(product: StoreItem, lang: "en" | "ar") {
   return `https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent(message.join("\n"))}`;
 }
 
+/** Whether a product has a valid discounted redemption price. */
+function hasDiscount(product: StoreItem) {
+  return product.discountPoints != null && product.discountPoints > 0;
+}
+
+/**
+ * Price display for a product card.
+ * - No discount: shows the Required Points value normally.
+ * - Discount: shows the original Required Points with a red strikethrough and
+ *   the Discount Points value next to it, more visually prominent.
+ */
+function PriceTag({
+  product,
+  variant,
+}: {
+  product: StoreItem;
+  variant: "badge" | "full";
+}) {
+  const { lang } = useI18n();
+  const discounted = hasDiscount(product);
+
+  if (variant === "badge") {
+    // Compact badge: when discounted, show the discounted price as the headline.
+    return (
+      <>
+        <Sparkles className="h-3 w-3" aria-hidden />
+        {discounted
+          ? pointsLabel(product.discountPoints, lang)
+          : pointsLabel(product.requiredPoints, lang)}
+      </>
+    );
+  }
+
+  if (discounted) {
+    return (
+      <span className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-base">
+          {pointsLabel(product.requiredPoints, lang)}
+        </span>
+        <span className="stat-number text-xl text-gold sm:text-2xl">
+          {pointsLabel(product.discountPoints, lang)}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="stat-number text-xl text-gold sm:text-2xl">
+      {pointsLabel(product.requiredPoints, lang)}
+    </span>
+  );
+}
+
 function ProductCard({ product }: { product: StoreItem }) {
   const { t, lang } = useI18n();
   const name = lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
