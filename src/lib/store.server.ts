@@ -67,6 +67,7 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
       descriptionEn: str(row.fields["Description En"]) || str(row.fields["Description EN"]),
       descriptionAr: str(row.fields["Description AR"]),
       requiredPoints: optNumeric(row.fields["Required Points"]),
+      discountPoints: optNumeric(row.fields["Discount Points"]),
       imageUrl: firstImageUrl(row.fields["Product Image"]),
     };
 

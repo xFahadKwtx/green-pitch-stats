@@ -122,6 +122,8 @@ export interface StoreItem {
   descriptionEn: string;
   descriptionAr: string;
   requiredPoints: number | null;
+  /** Optional Airtable "Discount Points" — the current discounted redemption price. */
+  discountPoints: number | null;
   imageUrl: string | null;
 }
 
