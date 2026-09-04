@@ -11,6 +11,20 @@ import { AIRTABLE_TABLES, listAirtableRecords, optNumeric, str } from "./airtabl
 const linkIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
+/**
+ * Extract the lower bound of a category point range so categories can be
+ * sorted from lowest to highest. Handles range ("10–24 Points", "10-24 نقطة")
+ * and single-value ("100 Points") names. Returns Infinity when no number is
+ * found so unparseable categories sort after numeric ones without changing
+ * their relative order.
+ */
+const categoryLowerBound = (nameEn: string, nameAr: string): number => {
+  const matches = [...`${nameEn} ${nameAr}`.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) =>
+    Number(m[0].replace(",", ".")),
+  );
+  return matches.length > 0 ? Math.min(...matches) : Infinity;
+};
+
 const firstImageUrl = (value: unknown): string | null => {
   if (!Array.isArray(value)) return null;
   for (const item of value) {
