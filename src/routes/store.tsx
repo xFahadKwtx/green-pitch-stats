@@ -126,7 +126,7 @@ function ProductCard({ product }: { product: StoreItem }) {
             <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
           </div>
         )}
-        <span className="absolute top-2 end-2 inline-flex items-center gap-1 rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
+        <span className="absolute top-2 end-2 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
           <PriceTag product={product} variant="badge" />
         </span>
       </div>
