@@ -70,35 +70,35 @@ function ProductCard({ product }: { product: StoreItem }) {
           />
         ) : (
           <div className="grid h-full place-items-center text-gold/70" aria-hidden>
-            <ShoppingBag className="h-12 w-12" strokeWidth={1.25} />
+            <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
           </div>
         )}
-        <span className="absolute top-3 end-3 inline-flex items-center gap-1 rounded-full border border-gold/40 bg-background/80 px-3 py-1.5 text-xs font-bold text-gold backdrop-blur-sm">
-          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+        <span className="absolute top-2 end-2 inline-flex items-center gap-1 rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
+          <Sparkles className="h-3 w-3" aria-hidden />
           {pointsLabel(product.requiredPoints, lang)}
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 p-5 sm:p-6">
+      <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
         <div>
-          <h3 className="text-xl font-bold leading-tight sm:text-2xl">{name}</h3>
+          <h3 className="text-lg font-bold leading-tight sm:text-xl">{name}</h3>
           {description ? (
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
         </div>
 
-        <div className="mt-auto flex items-end justify-between gap-3 border-t border-border pt-4">
-          <p className="stat-number text-2xl text-gold sm:text-3xl">
+        <div className="mt-auto flex items-end justify-between gap-2 border-t border-border pt-3">
+          <p className="stat-number text-xl text-gold sm:text-2xl">
             {pointsLabel(product.requiredPoints, lang)}
           </p>
           <a
             href={orderLink(product, lang)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-gold px-4 text-sm font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
           >
             {t("store.order")}
-            <ArrowUpRight className="h-4 w-4" aria-hidden />
+            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
           </a>
         </div>
       </div>
