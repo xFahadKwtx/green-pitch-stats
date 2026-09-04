@@ -80,6 +80,11 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
     section.products.sort((a, b) => (a.requiredPoints ?? 0) - (b.requiredPoints ?? 0));
   }
 
-  return [...sections.values()].filter((section) => section.products.length > 0);
+  return [...sections.values()]
+    .filter((section) => section.products.length > 0)
+    .sort(
+      (a, b) =>
+        categoryLowerBound(a.nameEn, a.nameAr) - categoryLowerBound(b.nameEn, b.nameAr),
+    );
 }
 
