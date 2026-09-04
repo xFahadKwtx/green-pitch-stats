@@ -139,8 +139,10 @@ function ProductCard({ product }: { product: StoreItem }) {
           ) : null}
         </div>
 
-        <div className="mt-auto flex items-end justify-between gap-2 border-t border-border pt-3">
-          <PriceTag product={product} variant="full" />
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
+          <span className="min-w-0 shrink whitespace-nowrap text-xl font-bold leading-none text-gold sm:text-2xl">
+            <PriceTag product={product} variant="full" />
+          </span>
           <a
             href={orderLink(product, lang)}
             target="_blank"
