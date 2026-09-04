@@ -121,7 +121,7 @@ function CategorySection({ category }: { category: StoreCategorySection }) {
           {category.products.length}
         </span>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {category.products.map((product) => (
           <ProductCard key={`${category.id}-${product.id}`} product={product} />
         ))}
