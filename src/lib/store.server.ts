@@ -38,6 +38,21 @@ const firstImageUrl = (value: unknown): string | null => {
   return null;
 };
 
+/** Normalized value of the Airtable "Store Section" cell. */
+const storeSection = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    const first = value.find((v) => typeof v === "string");
+    return typeof first === "string" ? first.trim().toLowerCase() : "";
+  }
+  return str(value).toLowerCase();
+};
+
+/** Fixed sections that come before the point-category sections. */
+const FIXED_SECTIONS = [
+  { key: "cards", id: "store-section-cards", nameEn: "Cards", nameAr: "البطاقات" },
+  { key: "cashback", id: "store-section-cashback", nameEn: "Cashback", nameAr: "استرداد نقدي" },
+] as const;
+
 /** Website-visible store products grouped by their linked Airtable category. */
 export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> {
   const [productRows, categoryRows] = await Promise.all([
@@ -52,6 +67,13 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
     if (!nameEn && !nameAr) continue;
     sections.set(row.id, { id: row.id, nameEn, nameAr, products: [] });
   }
+
+  const fixed = new Map<string, StoreCategorySection>(
+    FIXED_SECTIONS.map((s) => [
+      s.key,
+      { id: s.id, nameEn: s.nameEn, nameAr: s.nameAr, products: [] },
+    ]),
+  );
 
   for (const row of productRows) {
     if (row.fields["Show On Website"] !== true) continue;
@@ -71,21 +93,38 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
       imageUrl: firstImageUrl(row.fields["Product Image"]),
     };
 
+    // Cards / Cashback live only in their dedicated section — never in the
+    // point-category sections.
+    const fixedSection = fixed.get(storeSection(row.fields["Store Section"]));
+    if (fixedSection) {
+      fixedSection.products.push(product);
+      continue;
+    }
+
     for (const categoryId of linkIds(row.fields["Category"])) {
       const section = sections.get(categoryId);
       if (section) section.products.push(product);
     }
   }
 
-  for (const section of sections.values()) {
-    section.products.sort((a, b) => (a.requiredPoints ?? 0) - (b.requiredPoints ?? 0));
+  const byPoints = (a: StoreItem, b: StoreItem) =>
+    (a.requiredPoints ?? 0) - (b.requiredPoints ?? 0);
+
+  for (const section of [...fixed.values(), ...sections.values()]) {
+    section.products.sort(byPoints);
   }
 
-  return [...sections.values()]
+  const categorySections = [...sections.values()]
     .filter((section) => section.products.length > 0)
     .sort(
       (a, b) =>
         categoryLowerBound(a.nameEn, a.nameAr) - categoryLowerBound(b.nameEn, b.nameAr),
     );
+
+  return [
+    ...FIXED_SECTIONS.map((s) => fixed.get(s.key)!).filter((s) => s.products.length > 0),
+    ...categorySections,
+  ];
 }
+
 
