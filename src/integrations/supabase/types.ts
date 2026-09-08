@@ -14,13 +14,73 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      airtable_public_cache: {
+        Row: {
+          cache_key: string
+          control: Json | null
+          failure_count: number
+          fresh_until: string | null
+          last_page_counts: Json
+          payload: Json | null
+          refresh_started_at: string | null
+          retry_after: string | null
+          schema_version: number
+        }
+        Insert: {
+          cache_key: string
+          control?: Json | null
+          failure_count?: number
+          fresh_until?: string | null
+          last_page_counts?: Json
+          payload?: Json | null
+          refresh_started_at?: string | null
+          retry_after?: string | null
+          schema_version?: number
+        }
+        Update: {
+          cache_key?: string
+          control?: Json | null
+          failure_count?: number
+          fresh_until?: string | null
+          last_page_counts?: Json
+          payload?: Json | null
+          refresh_started_at?: string | null
+          retry_after?: string | null
+          schema_version?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      h2_fail_refresh: {
+        Args: {
+          p_cache_key: string
+          p_kind: string
+          p_lease_token: string
+          p_retry_after_seconds: number
+        }
+        Returns: Json
+      }
+      h2_finish_refresh: {
+        Args: {
+          p_cache_key: string
+          p_lease_token: string
+          p_page_counts: Json
+          p_payload: Json
+        }
+        Returns: Json
+      }
+      h2_get_or_claim: {
+        Args: { p_cache_key: string; p_schema_version: number }
+        Returns: Json
+      }
+      h2_take_page_permit: {
+        Args: { p_cache_key: string; p_lease_token: string; p_sequence: number }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
