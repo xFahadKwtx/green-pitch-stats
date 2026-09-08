@@ -527,12 +527,15 @@ describe("refresh coordination", () => {
       Array.from({ length: 12 }, () => getCachedPublicFeed("records", loader)),
     );
     expect(refreshes).toBe(1);
-    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
-    // Non-owners either waited for the fresh result or failed closed; none
-    // started a second refresh.
+    // Same-instance callers coalesce onto the single in-flight attempt.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim").length).toBe(1);
     expect(world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.records).length)
       .toBe(1);
+    // The map is cleaned up afterwards.
+    expect(__testing.inFlightSize()).toBe(0);
   });
+
 
   test("4. cross-instance: a second instance sees busy, then the published cache", async () => {
     seedFullBase();
