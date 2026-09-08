@@ -42,6 +42,16 @@ const LEASE_MS = 60_000;
 const DEADLINE_MS = 45_000;
 const PACING_MS = 2_000;
 
+function utcDayStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function utcMonthStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
+
 interface FeedRow {
   schemaVersion: number;
   payload: unknown;
@@ -65,6 +75,8 @@ interface Control {
   dayLimit: number;
   monthUsed: number;
   monthLimit: number;
+  dayStart: number;
+  monthStart: number;
 }
 
 interface AirtableTableState {
@@ -100,6 +112,8 @@ class FakeWorld {
     dayLimit: DAY_LIMIT,
     monthUsed: 0,
     monthLimit: MONTH_LIMIT,
+    dayStart: utcDayStart(Date.parse("2026-09-08T12:00:00.000Z")),
+    monthStart: utcMonthStart(Date.parse("2026-09-08T12:00:00.000Z")),
   };
   tables = new Map<string, AirtableTableState>();
   airtableRequests: Array<{ table: string; at: number }> = [];
@@ -185,6 +199,21 @@ class FakeWorld {
     );
   }
 
+  /** UTC calendar-window normalization; lease and cooldown are preserved. */
+  private normalizeWindows() {
+    const c = this.control;
+    const day = utcDayStart(this.now);
+    const month = utcMonthStart(this.now);
+    if (c.dayStart < day) {
+      c.dayStart = day;
+      c.dayUsed = 0;
+    }
+    if (c.monthStart < month) {
+      c.monthStart = month;
+      c.monthUsed = 0;
+    }
+  }
+
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
     if (Number(args["p_schema_version"]) !== 1) {
@@ -200,6 +229,7 @@ class FakeWorld {
       return this.freshResponse(row);
     }
     if (!this.control.enabled) return { status: "disabled" };
+    this.normalizeWindows();
     if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
       return { status: "busy", recheck_after_ms: 1000 };
     }
@@ -246,6 +276,8 @@ class FakeWorld {
       return { status: "deadline_exceeded" };
     }
     if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
+    // Every grant must charge the CURRENT UTC day/month window.
+    this.normalizeWindows();
     if (c.cooldownUntil !== null && c.cooldownUntil > this.now) return { status: "cooldown" };
     if (c.dayUsed >= c.dayLimit || c.monthUsed >= c.monthLimit) {
       return { status: "budget_exhausted" };
@@ -321,9 +353,7 @@ class FakeWorld {
     if (args["p_kind"] === "rate_limited") {
       const supplied = Number(args["p_retry_after_seconds"]);
       const seconds =
-        Number.isFinite(supplied) && supplied > 0 && supplied <= 604800
-          ? Math.max(30, supplied)
-          : 30;
+        Number.isFinite(supplied) && supplied > 0 ? Math.max(30, supplied) : 30;
       const until = this.now + seconds * 1000;
       // Never shorten an existing cooldown.
       this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
