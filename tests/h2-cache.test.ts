@@ -554,12 +554,14 @@ describe("refresh coordination", () => {
     ).rejects.toThrow(FeedUnavailableError);
 
     // A publishes; B now gets the fresh payload with no Airtable traffic.
-    world.rpc("h2_finish_refresh", {
+    const published = world.rpc("h2_finish_refresh", {
       p_cache_key: "production:records",
       p_lease_token: claim["lease_token"],
       p_payload: [{ id: "recA" }],
-      p_page_counts: { [AIRTABLE_TABLES.records]: 1 },
-    });
+      p_page_counts: {},
+    }) as Record<string, unknown>;
+    expect(published["status"]).toBe("published");
+
     const payload = await getCachedPublicFeed("records", async () => {
       throw new Error("should be fresh");
     });
