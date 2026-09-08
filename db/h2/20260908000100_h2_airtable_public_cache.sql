@@ -383,6 +383,18 @@ begin
     return jsonb_build_object('status', 'sequence_conflict');
   end if;
 
+  -- UTC calendar-window normalization against the POST-LOCK clock, so a refresh
+  -- crossing midnight (or a month boundary) charges its pages to the CURRENT
+  -- window. The lease and any cooldown are preserved untouched.
+  v_day_start := date_trunc('day', ts at time zone 'UTC') at time zone 'UTC';
+  v_month_start := date_trunc('month', ts at time zone 'UTC') at time zone 'UTC';
+  if (c ->> 'day_start') is null or (c ->> 'day_start')::timestamptz < v_day_start then
+    c := jsonb_set(jsonb_set(c, '{day_start}', to_jsonb(v_day_start)), '{day_used}', to_jsonb(0));
+  end if;
+  if (c ->> 'month_start') is null or (c ->> 'month_start')::timestamptz < v_month_start then
+    c := jsonb_set(jsonb_set(c, '{month_start}', to_jsonb(v_month_start)), '{month_used}', to_jsonb(0));
+  end if;
+
   if (c ->> 'cooldown_until') is not null
      and (c ->> 'cooldown_until')::timestamptz > ts then
     return jsonb_build_object('status', 'cooldown');
@@ -392,6 +404,7 @@ begin
      or (c ->> 'month_used')::numeric >= (c ->> 'month_limit')::numeric then
     return jsonb_build_object('status', 'budget_exhausted');
   end if;
+
 
   if (c ->> 'next_request_at') is not null
      and (c ->> 'next_request_at')::timestamptz > ts then
