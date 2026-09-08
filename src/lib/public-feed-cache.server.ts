@@ -10,12 +10,15 @@
  * - No code path may reach Airtable without an active refresh context and a
  *   fresh, unexpired page permit (fail closed, never bypass).
  * - Postgres unavailable => the feed fails closed; Airtable is NOT called.
- * - Only complete successful payloads are published; partial results are
- *   discarded and never replace a valid cache entry.
+ * - Only complete successful payloads are published; partial or malformed
+ *   results are discarded and never replace a valid cache entry.
  * - Cache rows contain only completed PUBLIC response objects. No credentials,
  *   no raw Airtable records, no upstream error bodies.
- * - Service credentials are read from process.env inside functions only and
+ * - Service credentials are read from process.env inside functions only and are
  *   never logged.
+ * - The SQL coordinator is the authority for freshness, budget, pacing and the
+ *   45s refresh deadline. Local in-flight coalescing is a per-instance
+ *   optimisation only and never substitutes for it.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -34,9 +37,8 @@ export const PERMIT_WINDOW_MS = 1_000;
 /** RPC ceiling; ambiguous RPCs are never retried. */
 export const RPC_TIMEOUT_MS = 5_000;
 
-const MAX_BUSY_RECHECKS = 6;
-const BUSY_RECHECK_MS = 700;
-const MAX_BUSY_RECHECK_MS = 1_500;
+/** Bounded busy rechecks: no unbounded per-visitor polling. */
+const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
 const MAX_PACING_WAITS = 8;
 const MAX_PACING_WAIT_MS = 3_000;
 
@@ -72,7 +74,7 @@ interface RefreshContext {
   cacheKey: string;
   feed: FeedName;
   leaseToken: string;
-  /** Monotonic ms deadline for the whole refresh. */
+  /** Monotonic ms deadline for the whole refresh (DB clock is the authority). */
   deadlineAt: number;
   controller: AbortController;
   sequence: number;
@@ -80,16 +82,22 @@ interface RefreshContext {
   seenOffsets: Set<string>;
   /** Serializes page dispatches inside one refresh. */
   queue: Promise<unknown>;
+  /** Set once any page task fails: no sibling may dispatch afterwards. */
+  failed: boolean;
 }
 
 const refreshStore = new AsyncLocalStorage<RefreshContext>();
 
-const monotonic = (): number => performance.now();
+let monotonicImpl = (): number => performance.now();
+const monotonic = (): number => monotonicImpl();
 
 let sleepImpl = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 let modeOverride: string | undefined;
+
+/** Per-instance in-flight coalescing: env + feed + schema version. */
+const inFlight = new Map<string, Promise<unknown>>();
 
 /** Test-only seams. Never used by production code paths. */
 export const __testing = {
@@ -99,10 +107,17 @@ export const __testing = {
   resetSleep() {
     sleepImpl = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   },
+  setMonotonic(fn: () => number) {
+    monotonicImpl = fn;
+  },
+  resetMonotonic() {
+    monotonicImpl = () => performance.now();
+  },
   setMode(mode: string | undefined) {
     modeOverride = mode;
   },
   currentRefresh: () => refreshStore.getStore(),
+  inFlightSize: () => inFlight.size,
 };
 
 const sleep = (ms: number) => sleepImpl(Math.max(0, ms));
@@ -176,45 +191,83 @@ async function rpc(fn: string, args: Json): Promise<Json> {
 /**
  * Serve a public feed from the shared cache, refreshing through the global
  * lease when the cached entry is missing or expired.
+ *
+ * Concurrent callers on the SAME instance share one attempt; Postgres remains
+ * the cross-instance authority.
  */
 export async function getCachedPublicFeed<T>(
   feed: FeedName,
   load: () => Promise<T>,
 ): Promise<T> {
   const cacheKey = cacheKeyFor(feed);
+  const localKey = `${cacheKey}:${SCHEMA_VERSION}`;
 
-  for (let attempt = 0; attempt <= MAX_BUSY_RECHECKS; attempt++) {
+  const existing = inFlight.get(localKey);
+  if (existing) return existing as Promise<T>;
+
+  const attempt = servePublicFeed<T>(cacheKey, feed, load).finally(() => {
+    inFlight.delete(localKey);
+  });
+  inFlight.set(localKey, attempt);
+  return attempt;
+}
+
+async function servePublicFeed<T>(
+  cacheKey: string,
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    // Capture local monotonic time BEFORE the RPC so RPC latency is subtracted
+    // from — never added to — the freshness and deadline windows.
+    const beforeRpc = monotonic();
     const result = await rpc("h2_get_or_claim", {
       p_cache_key: cacheKey,
       p_schema_version: SCHEMA_VERSION,
     });
     const status = String(result["status"] ?? "");
 
-    if (status === "fresh") return result["payload"] as T;
+    if (status === "fresh") {
+      const freshForMs = Number(result["fresh_for_ms"] ?? 0);
+      // Only usable if the entry is still fresh right now, conservatively
+      // measured from before the RPC was issued.
+      if (Number.isFinite(freshForMs) && monotonic() <= beforeRpc + freshForMs) {
+        return result["payload"] as T;
+      }
+      if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
+      throw new FeedUnavailableError(`feed ${feed} unavailable (stale fresh window)`);
+    }
 
     if (status === "claimed") {
       const token = String(result["lease_token"] ?? "");
       if (!token) throw new FeedUnavailableError("coordinator returned no lease token");
-      return runRefresh(cacheKey, feed, token, load);
+      const remaining = Number(result["refresh_deadline_ms"] ?? 0);
+      const budget = Math.min(
+        Number.isFinite(remaining) ? remaining : 0,
+        REFRESH_DEADLINE_MS,
+      );
+      if (budget <= 0) {
+        throw new FeedUnavailableError(`no refresh time remaining for ${feed}`);
+      }
+      return runRefresh(cacheKey, feed, token, beforeRpc + budget, budget, load);
     }
 
-    if (status === "busy" && attempt < MAX_BUSY_RECHECKS) {
-      const wait = Number(result["recheck_after_ms"] ?? BUSY_RECHECK_MS);
-      await sleep(Math.min(Number.isFinite(wait) ? wait : BUSY_RECHECK_MS, MAX_BUSY_RECHECK_MS));
+    if (status === "busy" && attempt < BUSY_RECHECK_DELAYS_MS.length) {
+      await sleep(BUSY_RECHECK_DELAYS_MS[attempt]!);
       continue;
     }
 
-    // busy (exhausted rechecks), backoff, cooldown, budget_exhausted, disabled
+    // busy (rechecks exhausted), backoff, cooldown, budget_exhausted, disabled
     throw new FeedUnavailableError(`feed ${feed} unavailable (${status || "unknown"})`);
   }
-
-  throw new FeedUnavailableError(`feed ${feed} unavailable (busy)`);
 }
 
 async function runRefresh<T>(
   cacheKey: string,
   feed: FeedName,
   leaseToken: string,
+  deadlineAt: number,
+  budgetMs: number,
   load: () => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
@@ -222,24 +275,22 @@ async function runRefresh<T>(
     cacheKey,
     feed,
     leaseToken,
-    deadlineAt: monotonic() + REFRESH_DEADLINE_MS,
+    deadlineAt,
     controller,
     sequence: 0,
     pageCounts: {},
     seenOffsets: new Set<string>(),
     queue: Promise.resolve(),
+    failed: false,
   };
 
-  const deadlineTimer = setTimeout(() => controller.abort(), REFRESH_DEADLINE_MS);
+  const deadlineTimer = setTimeout(() => controller.abort(), budgetMs);
   if (typeof (deadlineTimer as unknown as { unref?: () => void }).unref === "function") {
     (deadlineTimer as unknown as { unref: () => void }).unref();
   }
 
-  let payload: T;
-  try {
-    payload = await refreshStore.run(ctx, load);
-  } catch (error) {
-    clearTimeout(deadlineTimer);
+  const abandon = async (error: unknown): Promise<never> => {
+    ctx.failed = true;
     controller.abort();
     const rateLimited = error instanceof AirtableRateLimitError;
     try {
@@ -255,19 +306,38 @@ async function runRefresh<T>(
     throw error instanceof FeedUnavailableError
       ? error
       : new FeedUnavailableError(`refresh failed for ${feed}`);
-  }
-  clearTimeout(deadlineTimer);
+  };
 
-  const finished = await rpc("h2_finish_refresh", {
-    p_cache_key: cacheKey,
-    p_lease_token: leaseToken,
-    p_payload: payload as unknown as Json,
-    p_page_counts: ctx.pageCounts,
-  });
-  if (String(finished["status"] ?? "") !== "published") {
-    throw new FeedUnavailableError(`refresh result rejected for ${feed}`);
+  try {
+    let payload: T;
+    try {
+      payload = await refreshStore.run(ctx, load);
+    } catch (error) {
+      return await abandon(error);
+    }
+
+    // The finish attempt is part of the refresh: the deadline timer stays armed
+    // until it concludes, and a failed completion runs the same cleanup.
+    try {
+      const finished = await rpc("h2_finish_refresh", {
+        p_cache_key: cacheKey,
+        p_lease_token: leaseToken,
+        p_payload: payload as unknown as Json,
+        p_page_counts: ctx.pageCounts,
+      });
+      if (String(finished["status"] ?? "") !== "published") {
+        return await abandon(
+          new FeedUnavailableError(`refresh result rejected for ${feed}`),
+        );
+      }
+    } catch (error) {
+      return await abandon(error);
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(deadlineTimer);
   }
-  return payload;
 }
 
 function enqueue<T>(ctx: RefreshContext, task: () => Promise<T>): Promise<T> {
@@ -295,71 +365,94 @@ export async function runAirtablePage<T>(
   }
 
   return enqueue(ctx, async () => {
-    if (ctx.controller.signal.aborted) {
-      throw new FeedUnavailableError("refresh aborted");
-    }
-    if (ctx.seenOffsets.has(offsetKey)) {
-      throw new FeedUnavailableError("duplicate Airtable page authorization");
-    }
-    ctx.seenOffsets.add(offsetKey);
-    if (monotonic() > ctx.deadlineAt) {
-      throw new FeedUnavailableError("refresh deadline exceeded");
-    }
-
-    const sequence = ctx.sequence + 1;
-    let usableUntil = 0;
-
-    for (let attempt = 0; ; attempt++) {
-      const startedAt = monotonic();
-      const permit = await rpc("h2_take_page_permit", {
-        p_cache_key: ctx.cacheKey,
-        p_lease_token: ctx.leaseToken,
-        p_sequence: sequence,
-      });
-      const status = String(permit["status"] ?? "");
-
-      if (status === "granted") {
-        const window = Number(permit["usable_for_ms"] ?? PERMIT_WINDOW_MS);
-        // Conservative: count the window from BEFORE the RPC, so RPC latency is
-        // subtracted rather than added. Guarantees >= 1s between dispatches.
-        usableUntil =
-          startedAt + Math.min(Number.isFinite(window) ? window : PERMIT_WINDOW_MS, PERMIT_WINDOW_MS);
-        ctx.sequence = sequence;
-        break;
-      }
-
-      if (status === "paced" && attempt < MAX_PACING_WAITS) {
-        const wait = Number(permit["wait_ms"] ?? 1_000);
-        const delay = Math.min(Number.isFinite(wait) ? wait : 1_000, MAX_PACING_WAIT_MS);
-        if (monotonic() + delay > ctx.deadlineAt) {
-          throw new FeedUnavailableError("refresh deadline exceeded while pacing");
-        }
-        await sleep(delay);
-        continue;
-      }
-
-      ctx.controller.abort();
-      throw new FeedUnavailableError(`Airtable page permit denied (${status || "unknown"})`);
-    }
-
-    if (monotonic() > usableUntil) {
-      ctx.controller.abort();
-      throw new FeedUnavailableError("Airtable page permit expired before dispatch");
-    }
-
-    ctx.pageCounts[tableId] = (ctx.pageCounts[tableId] ?? 0) + 1;
-
-    const signal = AbortSignal.any([
-      ctx.controller.signal,
-      AbortSignal.timeout(AIRTABLE_REQUEST_TIMEOUT_MS),
-    ]);
-
     try {
-      return await dispatch(signal);
+      return await authorizeAndDispatch(ctx, tableId, offsetKey, dispatch);
     } catch (error) {
-      // Abort sibling reads for this refresh; the attempt is discarded.
+      // ANY page-task failure (duplicate offset, denied permit, expired window,
+      // transport error) aborts the whole refresh context before any sibling
+      // task can dispatch.
+      ctx.failed = true;
       ctx.controller.abort();
       throw error;
     }
   });
+}
+
+async function authorizeAndDispatch<T>(
+  ctx: RefreshContext,
+  tableId: string,
+  offsetKey: string,
+  dispatch: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  if (ctx.failed) throw new FeedUnavailableError("refresh already failed");
+  if (ctx.controller.signal.aborted) throw new FeedUnavailableError("refresh aborted");
+  if (ctx.seenOffsets.has(offsetKey)) {
+    throw new FeedUnavailableError("duplicate Airtable page authorization");
+  }
+  ctx.seenOffsets.add(offsetKey);
+  if (monotonic() >= ctx.deadlineAt) {
+    throw new FeedUnavailableError("refresh deadline exceeded");
+  }
+
+  const sequence = ctx.sequence + 1;
+  let usableUntil = 0;
+
+  for (let attempt = 0; ; attempt++) {
+    const beforeRpc = monotonic();
+    const permit = await rpc("h2_take_page_permit", {
+      p_cache_key: ctx.cacheKey,
+      p_lease_token: ctx.leaseToken,
+      p_sequence: sequence,
+    });
+    const status = String(permit["status"] ?? "");
+
+    if (status === "granted") {
+      const window = Number(permit["usable_for_ms"] ?? PERMIT_WINDOW_MS);
+      // Conservative: the window is counted from BEFORE the RPC, so the entire
+      // RPC round trip is subtracted. Guarantees >= 1s between dispatches.
+      usableUntil =
+        beforeRpc +
+        Math.min(Number.isFinite(window) ? window : PERMIT_WINDOW_MS, PERMIT_WINDOW_MS);
+      const remaining = Number(permit["refresh_deadline_ms"] ?? NaN);
+      if (Number.isFinite(remaining)) {
+        // The DB clock is the authority for the total deadline.
+        ctx.deadlineAt = Math.min(ctx.deadlineAt, beforeRpc + remaining);
+      }
+      ctx.sequence = sequence;
+      break;
+    }
+
+    if (status === "paced" && attempt < MAX_PACING_WAITS) {
+      const wait = Number(permit["wait_ms"] ?? 1_000);
+      const delay = Math.min(Number.isFinite(wait) ? wait : 1_000, MAX_PACING_WAIT_MS);
+      if (monotonic() + delay >= ctx.deadlineAt) {
+        throw new FeedUnavailableError("refresh deadline exceeded while pacing");
+      }
+      await sleep(delay);
+      continue;
+    }
+
+    throw new FeedUnavailableError(`Airtable page permit denied (${status || "unknown"})`);
+  }
+
+  // Re-check abort and both deadlines immediately before dispatch. An expired
+  // permit is never reused.
+  if (ctx.failed || ctx.controller.signal.aborted) {
+    throw new FeedUnavailableError("refresh aborted before dispatch");
+  }
+  if (monotonic() >= ctx.deadlineAt) {
+    throw new FeedUnavailableError("refresh deadline exceeded before dispatch");
+  }
+  if (monotonic() >= usableUntil) {
+    throw new FeedUnavailableError("Airtable page permit expired before dispatch");
+  }
+
+  ctx.pageCounts[tableId] = (ctx.pageCounts[tableId] ?? 0) + 1;
+
+  const signal = AbortSignal.any([
+    ctx.controller.signal,
+    AbortSignal.timeout(AIRTABLE_REQUEST_TIMEOUT_MS),
+  ]);
+
+  return dispatch(signal);
 }
