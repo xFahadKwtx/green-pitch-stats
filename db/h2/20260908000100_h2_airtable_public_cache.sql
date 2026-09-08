@@ -335,6 +335,9 @@ declare
   ts timestamptz;
   started timestamptz;
   wait_ms bigint;
+  v_day_start timestamptz;
+  v_month_start timestamptz;
+
 begin
   if p_cache_key is null or p_lease_token is null then
     return jsonb_build_object('status', 'invalid');
