@@ -3,7 +3,16 @@
  *
  * SAFETY: this module only ever issues GET requests. No helper here can create,
  * update or delete an Airtable record — do not add write helpers.
+ *
+ * H2: every pagination page must be authorized by the shared coordinator
+ * (see public-feed-cache.server.ts). There is no bypass path: without an
+ * active refresh lease and a valid, unexpired permit, no request is dispatched.
  */
+
+import {
+  AirtableRateLimitError,
+  runAirtablePage,
+} from "./public-feed-cache.server";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/airtable";
 
@@ -31,6 +40,15 @@ interface AirtableListResponse {
   offset?: string;
 }
 
+/** Seconds from a Retry-After header, when Airtable supplies a usable value. */
+function retryAfterSeconds(response: Response): number | null {
+  const header = response.headers.get("retry-after");
+  if (!header) return null;
+  const seconds = Number(header.trim());
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+
 /** Fetch every record of a table (read-only, follows Airtable pagination). */
 export async function listAirtableRecords(
   tableId: string,
@@ -55,25 +73,39 @@ export async function listAirtableRecords(
       url.searchParams.append("fields[]", field);
     }
 
-    // GET only — this integration is strictly read-only.
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": airtableApiKey,
+    // Every page goes through the shared permit system: pacing, cooldown,
+    // daily/monthly budget and unique sequential authorization.
+    const payload = await runAirtablePage(
+      tableId,
+      `${tableId}:${offset ?? "first"}`,
+      async (signal): Promise<AirtableListResponse> => {
+        // GET only — this integration is strictly read-only.
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${lovableApiKey}`,
+            "X-Connection-Api-Key": airtableApiKey,
+          },
+          signal,
+        });
+
+        if (response.status === 429) {
+          throw new AirtableRateLimitError(retryAfterSeconds(response));
+        }
+
+        if (!response.ok) {
+          // Upstream bodies are never logged or stored.
+          throw new Error(`Airtable request failed [${response.status}]`);
+        }
+
+        return (await response.json()) as AirtableListResponse;
       },
-    });
+    );
 
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`Airtable request failed [${response.status}]: ${body}`);
-      throw new Error(`Airtable request failed [${response.status}]: ${body}`);
-    }
-
-    const payload = (await response.json()) as AirtableListResponse;
     records.push(...(payload.records ?? []));
     offset = payload.offset;
   } while (offset);
+
 
   return records;
 }
