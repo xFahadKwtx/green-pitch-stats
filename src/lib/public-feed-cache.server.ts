@@ -149,7 +149,7 @@ function isLegacyJwtKey(key: string): boolean {
 }
 
 /** Single PostgREST RPC call with a hard timeout. Never retried. */
-async function rpc(fn: string, args: Json): Promise<Json> {
+async function rpc(fn: string, args: Json, extraSignal?: AbortSignal): Promise<Json> {
   const url = process.env["SUPABASE_URL"];
   const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (!url || !key) throw new FeedUnavailableError("coordinator credentials unavailable");
@@ -161,17 +161,24 @@ async function rpc(fn: string, args: Json): Promise<Json> {
   // Opaque sb_secret_* keys are not JWTs; only legacy keys use a bearer.
   if (isLegacyJwtKey(key)) headers["Authorization"] = `Bearer ${key}`;
 
+  // The 5s RPC ceiling always applies; callers may add the remaining refresh
+  // deadline so a completion call cannot outlive its own lease window.
+  const signal = extraSignal
+    ? AbortSignal.any([extraSignal, AbortSignal.timeout(RPC_TIMEOUT_MS)])
+    : AbortSignal.timeout(RPC_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(`${url}/rest/v1/rpc/${fn}`, {
       method: "POST",
       headers,
       body: JSON.stringify(args),
-      signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      signal,
     });
   } catch {
     throw new FeedUnavailableError(`coordinator unreachable (${fn})`);
   }
+
 
   if (!response.ok) {
     // Upstream error bodies are intentionally discarded.
