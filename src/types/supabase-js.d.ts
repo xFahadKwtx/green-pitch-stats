@@ -9,20 +9,12 @@
  * over automatically.
  */
 declare module "@supabase/supabase-js" {
-  export type SupabaseClientOptions = Record<string, unknown>;
-
-  // Loose structural type: the generated files are not used at runtime today.
-  // `any` avoids index-signature access rules in the generated code.
-  export type SupabaseClient<Database = unknown, Schema = unknown, Extra = unknown> = any;
-
-
-  export function createClient<Database = unknown, Schema = unknown, Extra = unknown>(
-    supabaseUrl: string,
-    supabaseKey: string,
-    options?: SupabaseClientOptions,
-  ): SupabaseClient<Database, Schema, Extra>;
-
-  export type Session = Record<string, any>;
-  export type User = Record<string, any>;
+  export type SupabaseClientOptions = any;
+  export type SupabaseClient<Database = any, Schema = any, Extra = any> = any;
+  export type Session = any;
+  export type User = any;
   export type AuthChangeEvent = string;
+
+  export const createClient: any;
 }
+
