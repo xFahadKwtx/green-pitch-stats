@@ -66,7 +66,16 @@ interface Control {
 interface AirtableTableState {
   records: Array<{ id: string; fields: Record<string, unknown> }>;
   /** Optional per-page behaviour override. */
-  behaviour?: "ok" | "429" | "500" | "timeout" | "fail-after-first";
+  behaviour?:
+    | "ok"
+    | "429"
+    | "500"
+    | "timeout"
+    | "fail-after-first"
+    | "no-records-array"
+    | "malformed-record"
+    | "bad-offset";
+
   retryAfter?: string;
 }
 
