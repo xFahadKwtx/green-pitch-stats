@@ -683,17 +683,18 @@ describe("pagination and permits", () => {
     }
   });
 
-  test("expired permit window is never reused", async () => {
+  test("expired permit window is never reused (RPC elapsed time counts)", async () => {
     seedFullBase();
-    // A slow coordinator round-trip means the 1s usable window has already
-    // elapsed by the time the grant reaches this instance: fail closed.
-    world.slowPermitMs = 1_200;
+    // 1.2s is consumed INSIDE the permit round-trip, so the 1s usable window
+    // has already elapsed when the grant arrives: fail closed, no dispatch.
+    world.rpcAdvanceMs["h2_take_page_permit"] = 1_200;
     await expect(
       getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
     ).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(0);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-  }, 15_000);
+  });
+
 
 });
 
