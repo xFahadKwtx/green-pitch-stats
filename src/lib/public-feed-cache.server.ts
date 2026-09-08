@@ -297,16 +297,21 @@ async function runRefresh<T>(
     failed: false,
   };
 
-  const deadlineTimer = setTimeout(() => controller.abort(), budgetMs);
+  // The timer is armed from the deadline anchored BEFORE the claim RPC, so the
+  // round trip's elapsed time is subtracted rather than added.
+  const remainingMs = () => deadlineAt - monotonic();
+  const deadlineTimer = setTimeout(() => controller.abort(), Math.max(0, remainingMs()));
   if (typeof (deadlineTimer as unknown as { unref?: () => void }).unref === "function") {
     (deadlineTimer as unknown as { unref: () => void }).unref();
   }
+  void budgetMs;
 
   const abandon = async (error: unknown): Promise<never> => {
     ctx.failed = true;
     controller.abort();
     const rateLimited = error instanceof AirtableRateLimitError;
     try {
+      // Cleanup is allowed its own RPC ceiling, outside the refresh deadline.
       await rpc("h2_fail_refresh", {
         p_cache_key: cacheKey,
         p_lease_token: leaseToken,
@@ -321,28 +326,38 @@ async function runRefresh<T>(
       : new FeedUnavailableError(`refresh failed for ${feed}`);
   };
 
+  const guard = (stage: string) => {
+    if (controller.signal.aborted) {
+      throw new FeedUnavailableError(`refresh aborted (${stage})`);
+    }
+    if (remainingMs() <= 0) {
+      throw new FeedUnavailableError(`refresh deadline exceeded (${stage})`);
+    }
+  };
+
   try {
+    // Exactly one failure path: any throw below runs h2_fail_refresh once.
     let payload: T;
     try {
+      guard("before load");
       payload = await refreshStore.run(ctx, load);
-    } catch (error) {
-      return await abandon(error);
-    }
+      guard("before finish");
 
-    // The finish attempt is part of the refresh: the deadline timer stays armed
-    // until it concludes, and a failed completion runs the same cleanup.
-    try {
-      const finished = await rpc("h2_finish_refresh", {
-        p_cache_key: cacheKey,
-        p_lease_token: leaseToken,
-        p_payload: payload as unknown as Json,
-        p_page_counts: ctx.pageCounts,
-      });
+      const finished = await rpc(
+        "h2_finish_refresh",
+        {
+          p_cache_key: cacheKey,
+          p_lease_token: leaseToken,
+          p_payload: payload as unknown as Json,
+          p_page_counts: ctx.pageCounts,
+        },
+        // The completion call cannot outlive the refresh deadline.
+        controller.signal,
+      );
       if (String(finished["status"] ?? "") !== "published") {
-        return await abandon(
-          new FeedUnavailableError(`refresh result rejected for ${feed}`),
-        );
+        throw new FeedUnavailableError(`refresh result rejected for ${feed}`);
       }
+      guard("after finish");
     } catch (error) {
       return await abandon(error);
     }
@@ -352,6 +367,7 @@ async function runRefresh<T>(
     clearTimeout(deadlineTimer);
   }
 }
+
 
 function enqueue<T>(ctx: RefreshContext, task: () => Promise<T>): Promise<T> {
   const run = ctx.queue.then(task, task);
