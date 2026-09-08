@@ -415,19 +415,25 @@ function installFetch() {
 
 beforeEach(() => {
   world = new FakeWorld();
+  // Activation is an explicit step; the seed ships disabled.
+  world.control.enabled = true;
   installFetch();
   __testing.setMode("production");
-  // Virtual clock: sleeps advance the fake DB clock instantly.
+  // Virtual clock: sleeps advance the fake DB clock instantly, and the client's
+  // monotonic seam reads the same fake clock.
   __testing.setSleep(async (ms: number) => {
     world.advance(ms);
   });
+  __testing.setMonotonic(() => world.now);
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   __testing.resetSleep();
+  __testing.resetMonotonic();
   __testing.setMode(undefined);
 });
+
 
 function seedFullBase() {
   world.seedTable(AIRTABLE_TABLES.playersDatabase, 122);
