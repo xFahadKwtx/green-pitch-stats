@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { createPublicError } from "../lib/public-error";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { I18nProvider } from "@/lib/i18n";
@@ -37,12 +38,15 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+function ErrorComponent({ reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
+    // M1: never forward the original error (message/stack/cause/URL) from the
+    // browser. Only the sanitized public representation is reported.
+    const safe = createPublicError();
+    console.error(safe.message);
+    reportLovableError(safe, { boundary: "tanstack_root_error_component" });
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">

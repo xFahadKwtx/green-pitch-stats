@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, MapPin, MessageCircle } from "lucide-react";
 
+import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import { contactInfo } from "@/data/site";
 import type { Match } from "@/data/types";
@@ -34,11 +35,7 @@ export const Route = createFileRoute("/upcoming-games")({
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(upcomingGamesQueryOptions);
   },
-  errorComponent: ({ error }) => (
-    <div role="alert" className="p-8 text-center text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: () => <FeedErrorNotice />,
   component: UpcomingGames,
 });
 

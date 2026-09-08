@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
+import { FeedErrorNotice } from "@/components/feed-error";
 import { MonthFilter, PageHeader, PageShell, SectionTitle } from "@/components/ui-kit";
 import type { Player } from "@/data/types";
 import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
@@ -31,11 +32,7 @@ export const Route = createFileRoute("/compare")({
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);
   },
-  errorComponent: ({ error }) => (
-    <div role="alert" className="p-8 text-center text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: () => <FeedErrorNotice />,
   component: ComparePage,
 });
 
