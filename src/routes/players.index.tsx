@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import { type Player, type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
@@ -28,11 +29,7 @@ export const Route = createFileRoute("/players/")({
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);
   },
-  errorComponent: ({ error }) => (
-    <div role="alert" className="p-8 text-center text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: () => <FeedErrorNotice />,
   component: PlayersPage,
 });
 

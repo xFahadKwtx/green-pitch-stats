@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Crown } from "lucide-react";
 import { useState } from "react";
 
+import { FeedErrorNotice } from "@/components/feed-error";
 import { MonthFilter, PageHeader, PageShell } from "@/components/ui-kit";
 import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
@@ -30,11 +31,7 @@ export const Route = createFileRoute("/leaderboard")({
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);
   },
-  errorComponent: ({ error }) => (
-    <div role="alert" className="p-8 text-center text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: () => <FeedErrorNotice />,
   component: LeaderboardPage,
 });
 

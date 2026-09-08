@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowUpRight, ShoppingBag, Sparkles } from "lucide-react";
 
+import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import type { StoreCategorySection, StoreItem } from "@/data/types";
 import { contactInfo } from "@/data/site";
@@ -26,11 +27,7 @@ export const Route = createFileRoute("/store")({
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(storeQueryOptions),
-  errorComponent: ({ error }) => (
-    <div role="alert" className="p-8 text-center text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: () => <FeedErrorNotice />,
   notFoundComponent: () => (
     <div className="p-8 text-center text-muted-foreground">Store not found.</div>
   ),

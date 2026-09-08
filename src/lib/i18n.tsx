@@ -67,6 +67,7 @@ const dict = {
     "records.holder": "Current record holder",
     "records.unclaimed": "No player has broken this record yet",
     "records.empty": "No records published yet.",
+    "error.generic": "This content is temporarily unavailable. Please try again shortly.",
 
     "profile.points": "Points Balance",
     "profile.back": "All players",
@@ -203,6 +204,7 @@ const dict = {
     "records.holder": "صاحب الرقم الحالي",
     "records.unclaimed": "لم يكسر أي لاعب هذا الرقم القياسي حتى الآن",
     "records.empty": "لا توجد أرقام قياسية منشورة بعد.",
+    "error.generic": "هذا المحتوى غير متوفر مؤقتاً. يرجى المحاولة بعد قليل.",
 
     "profile.points": "رصيد النقاط",
     "profile.back": "كل اللاعبين",
