@@ -73,8 +73,9 @@ interface AirtableTableState {
 class FakeWorld {
   now = Date.parse("2026-09-08T12:00:00.000Z");
   rows = new Map<string, FeedRow>();
+  /** Mirrors the seed: the coordinator ships DISABLED until activated. */
   control: Control = {
-    enabled: true,
+    enabled: false,
     leaseToken: null,
     leaseFeed: null,
     leaseStartedAt: null,
@@ -93,6 +94,8 @@ class FakeWorld {
   postgresDown = false;
   /** Extra real latency injected into permit RPCs (window-expiry testing). */
   slowPermitMs = 0;
+  /** Fake-clock time consumed INSIDE an RPC round trip, per rpc name. */
+  rpcAdvanceMs: Record<string, number> = {};
 
   tokenSeq = 0;
 
@@ -132,6 +135,8 @@ class FakeWorld {
   rpc(fn: string, args: Record<string, unknown>): unknown {
     this.rpcCalls.push(fn);
     if (this.postgresDown) throw new Error("coordinator down");
+    // Time consumed while the RPC is in flight (DB clock advances).
+    this.advance(this.rpcAdvanceMs[fn] ?? 0);
 
     if (fn === "h2_get_or_claim") return this.getOrClaim(args);
     if (fn === "h2_take_page_permit") return this.takePermit(args);
@@ -146,20 +151,44 @@ class FakeWorld {
     return row;
   }
 
+  private freshResponse(row: FeedRow) {
+    return {
+      status: "fresh",
+      payload: row.payload,
+      fresh_until: row.freshUntil,
+      fresh_for_ms: row.freshUntil! - this.now,
+    };
+  }
+
+  private ownerInvalid(key: string, token: unknown): boolean {
+    const c = this.control;
+    return (
+      token === null ||
+      token === undefined ||
+      c.leaseToken === null ||
+      c.leaseToken !== token ||
+      c.leaseFeed !== key ||
+      (c.leaseExpiresAt ?? 0) <= this.now
+    );
+  }
+
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
+    if (Number(args["p_schema_version"]) !== 1) {
+      throw new Error("unsupported schema version");
+    }
     const row = this.row(key);
     if (
       row.payload !== null &&
       row.freshUntil !== null &&
       row.freshUntil > this.now &&
-      row.schemaVersion === Number(args["p_schema_version"])
+      row.schemaVersion === 1
     ) {
-      return { status: "fresh", payload: row.payload, fresh_until: row.freshUntil };
+      return this.freshResponse(row);
     }
     if (!this.control.enabled) return { status: "disabled" };
     if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
-      return { status: "busy", recheck_after_ms: 700 };
+      return { status: "busy", recheck_after_ms: 1000 };
     }
     if (row.retryAfter !== null && row.retryAfter > this.now) {
       return { status: "backoff", retry_after: row.retryAfter };
@@ -179,26 +208,28 @@ class FakeWorld {
     this.control.leaseStartedAt = this.now;
     this.control.leaseExpiresAt = this.now + LEASE_MS;
     this.control.lastPageSequence = 0;
-    row.refreshStartedAt = this.now;
-    return { status: "claimed", lease_token: token, refresh_deadline_ms: DEADLINE_MS };
+    // The prior payload's refresh_started_at is intentionally untouched.
+    return {
+      status: "claimed",
+      lease_token: token,
+      refresh_deadline_ms: DEADLINE_MS,
+      lease_expires_at: this.control.leaseExpiresAt,
+    };
   }
 
   private takePermit(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
     const sequence = Number(args["p_sequence"]);
-    const row = this.row(key);
     const c = this.control;
 
-    if (
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
-    ) {
-      return { status: "expired" };
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "invalid" };
     }
-    if (row.refreshStartedAt === null || this.now > row.refreshStartedAt + DEADLINE_MS) {
+    if (!Number.isInteger(sequence) || sequence < 1) return { status: "invalid" };
+    if (this.ownerInvalid(key, token)) return { status: "expired" };
+    if (!c.enabled) return { status: "disabled" };
+    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
       return { status: "deadline_exceeded" };
     }
     if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
@@ -213,51 +244,81 @@ class FakeWorld {
     c.monthUsed += 1;
     c.lastPageSequence = sequence;
     c.nextRequestAt = this.now + PACING_MS;
-    return { status: "granted", usable_for_ms: 1000, sequence };
+    return {
+      status: "granted",
+      usable_for_ms: 1000,
+      sequence,
+      refresh_deadline_ms: c.leaseStartedAt + DEADLINE_MS - this.now,
+    };
   }
 
   private finish(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
+    const payload = args["p_payload"];
+    const counts = args["p_page_counts"];
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "rejected", reason: "invalid_arguments" };
+    }
+    if (!Array.isArray(payload)) {
+      return { status: "rejected", reason: "invalid_payload" };
+    }
+    if (!counts || typeof counts !== "object" || Array.isArray(counts)) {
+      return { status: "rejected", reason: "invalid_page_counts" };
+    }
+    const values = Object.values(counts as Record<string, unknown>);
+    if (values.some((v) => !Number.isInteger(v) || (v as number) <= 0)) {
+      return { status: "rejected", reason: "invalid_page_counts" };
+    }
     const row = this.row(key);
     const c = this.control;
-    if (
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
-    ) {
-      return { status: "stale_lease" };
+    if (this.ownerInvalid(key, token)) return { status: "stale_lease" };
+    if (!c.enabled) return { status: "rejected", reason: "disabled" };
+    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+      return { status: "rejected", reason: "deadline_exceeded" };
     }
-    const started = row.refreshStartedAt ?? this.now;
-    row.payload = args["p_payload"];
+    const sum = (values as number[]).reduce((a, b) => a + b, 0);
+    if (sum !== c.lastPageSequence) {
+      return { status: "rejected", reason: "page_count_mismatch" };
+    }
+    const started = c.leaseStartedAt;
+    row.payload = payload;
+    row.refreshStartedAt = started;
     row.freshUntil = started + FEED_TTL_SECONDS * 1000;
     row.retryAfter = null;
     row.failureCount = 0;
-    row.lastPageCounts = (args["p_page_counts"] as Record<string, number>) ?? {};
+    row.lastPageCounts = counts as Record<string, number>;
     this.releaseLease();
     return { status: "published", fresh_until: row.freshUntil };
   }
 
   private fail(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "ignored", reason: "invalid_arguments" };
+    }
     const row = this.row(key);
+    // A stale or expired owner may not alter ANY state.
+    if (this.ownerInvalid(key, token)) return { status: "ignored", reason: "stale_lease" };
+
     row.failureCount += 1;
     const backoff = Math.min(300, 10 * 2 ** Math.min(row.failureCount - 1, 10));
-    row.retryAfter = this.now + backoff * 1000;
+    row.retryAfter = Math.max(row.retryAfter ?? this.now, this.now + backoff * 1000);
     if (args["p_kind"] === "rate_limited") {
-      const supplied = Number(args["p_retry_after_seconds"] ?? 0);
-      const cooldown = Math.min(Math.max(30, Number.isFinite(supplied) ? supplied : 0), 3600);
-      this.control.cooldownUntil = this.now + cooldown * 1000;
+      const supplied = Number(args["p_retry_after_seconds"]);
+      const seconds =
+        Number.isFinite(supplied) && supplied > 0 && supplied <= 604800
+          ? Math.max(30, supplied)
+          : 30;
+      const until = this.now + seconds * 1000;
+      // Never shorten an existing cooldown.
+      this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
     }
-    let released = false;
-    if (this.control.leaseToken === token && this.control.leaseFeed === key) {
-      this.releaseLease();
-      released = true;
-    }
-    return { status: "recorded", released, retry_after: row.retryAfter };
+    this.releaseLease();
+    return { status: "recorded", released: true };
   }
+
 
   private releaseLease() {
     this.control.leaseToken = null;
