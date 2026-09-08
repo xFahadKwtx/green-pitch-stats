@@ -356,6 +356,17 @@ class FakeWorld {
     if (state.behaviour === "fail-after-first" && requestIndex > 0) {
       return new Response("upstream detail", { status: 500 });
     }
+    // Malformed 200 responses: each must fail the whole refresh.
+    if (state.behaviour === "no-records-array") {
+      return new Response(JSON.stringify({ records: "nope" }), { status: 200 });
+    }
+    if (state.behaviour === "malformed-record") {
+      return new Response(JSON.stringify({ records: [{ id: 42 }] }), { status: 200 });
+    }
+    if (state.behaviour === "bad-offset") {
+      return new Response(JSON.stringify({ records: [], offset: "" }), { status: 200 });
+    }
+
 
     const offsetParam = url.searchParams.get("offset");
     const start = offsetParam ? Number(offsetParam) : 0;
