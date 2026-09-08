@@ -26,6 +26,10 @@ import {
 } from "../src/lib/public-feed-cache.server";
 import { AIRTABLE_TABLES, listAirtableRecords } from "../src/lib/airtable.server";
 import { fetchRecordsFromAirtable } from "../src/lib/records.server";
+import { fetchPlayersFromAirtable } from "../src/lib/airtable-players.server";
+import { fetchStoreFromAirtable } from "../src/lib/store.server";
+import { fetchUpcomingGamesFromAirtable } from "../src/lib/upcoming-games.server";
+
 
 process.env["SUPABASE_URL"] = "http://coordinator.test";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] = "sb_secret_dummy_test_value";
