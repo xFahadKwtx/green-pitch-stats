@@ -149,12 +149,20 @@ export async function listAirtableRecords(
           throw new Error(`Airtable request failed [${response.status}]`);
         }
 
-        return (await response.json()) as AirtableListResponse;
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          throw new Error("Airtable response was not valid JSON");
+        }
+        // A malformed 200 fails the entire refresh; never silently empty.
+        return parseListResponse(body);
       },
     );
 
-    records.push(...(payload.records ?? []));
+    records.push(...payload.records);
     offset = payload.offset;
+
   } while (offset);
 
 
