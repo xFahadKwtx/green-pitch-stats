@@ -236,11 +236,17 @@ async function servePublicFeed<T>(
 
     if (status === "fresh") {
       const freshForMs = Number(result["fresh_for_ms"] ?? 0);
-      // Only usable if the entry is still fresh right now, conservatively
-      // measured from before the RPC was issued.
-      if (Number.isFinite(freshForMs) && monotonic() <= beforeRpc + freshForMs) {
+      // Usable only if the entry is STILL fresh right now, conservatively
+      // measured from before the RPC was issued. A window that ran out during
+      // the round trip is treated as stale.
+      if (
+        Number.isFinite(freshForMs) &&
+        freshForMs > 0 &&
+        monotonic() < beforeRpc + freshForMs
+      ) {
         return result["payload"] as T;
       }
+
       if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
       throw new FeedUnavailableError(`feed ${feed} unavailable (stale fresh window)`);
     }
