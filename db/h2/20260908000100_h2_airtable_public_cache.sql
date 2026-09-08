@@ -335,6 +335,9 @@ declare
   ts timestamptz;
   started timestamptz;
   wait_ms bigint;
+  v_day_start timestamptz;
+  v_month_start timestamptz;
+
 begin
   if p_cache_key is null or p_lease_token is null then
     return jsonb_build_object('status', 'invalid');
@@ -380,6 +383,18 @@ begin
     return jsonb_build_object('status', 'sequence_conflict');
   end if;
 
+  -- UTC calendar-window normalization against the POST-LOCK clock, so a refresh
+  -- crossing midnight (or a month boundary) charges its pages to the CURRENT
+  -- window. The lease and any cooldown are preserved untouched.
+  v_day_start := date_trunc('day', ts at time zone 'UTC') at time zone 'UTC';
+  v_month_start := date_trunc('month', ts at time zone 'UTC') at time zone 'UTC';
+  if (c ->> 'day_start') is null or (c ->> 'day_start')::timestamptz < v_day_start then
+    c := jsonb_set(jsonb_set(c, '{day_start}', to_jsonb(v_day_start)), '{day_used}', to_jsonb(0));
+  end if;
+  if (c ->> 'month_start') is null or (c ->> 'month_start')::timestamptz < v_month_start then
+    c := jsonb_set(jsonb_set(c, '{month_start}', to_jsonb(v_month_start)), '{month_used}', to_jsonb(0));
+  end if;
+
   if (c ->> 'cooldown_until') is not null
      and (c ->> 'cooldown_until')::timestamptz > ts then
     return jsonb_build_object('status', 'cooldown');
@@ -389,6 +404,7 @@ begin
      or (c ->> 'month_used')::numeric >= (c ->> 'month_limit')::numeric then
     return jsonb_build_object('status', 'budget_exhausted');
   end if;
+
 
   if (c ->> 'next_request_at') is not null
      and (c ->> 'next_request_at')::timestamptz > ts then
@@ -604,18 +620,26 @@ begin
   where cache_key = p_cache_key;
 
   if p_kind = 'rate_limited' then
-    -- Honour a valid Retry-After even when it exceeds one hour. Only unsafe
-    -- values (null, NaN, non-finite, non-positive, absurd) fall back to the
-    -- 30s floor; 7 days is a parse-sanity bound, not a cap on real values.
+    -- Honour ANY positive finite Retry-After, with no arbitrary upper cap.
+    -- NaN/Infinity are excluded with explicit TEXT checks, because in Postgres
+    -- numeric 'NaN' = 'NaN' is TRUE and would slip past an equality guard.
     if p_retry_after_seconds is not null
-       and p_retry_after_seconds = p_retry_after_seconds       -- excludes NaN
-       and p_retry_after_seconds > 0
-       and p_retry_after_seconds <= 604800 then
+       and lower(p_retry_after_seconds::text) not in ('nan', 'infinity', '-infinity')
+       and p_retry_after_seconds > 0 then
       cooldown_seconds := greatest(30, p_retry_after_seconds);
     else
       cooldown_seconds := 30;
     end if;
-    cooldown_until := ts + make_interval(secs => cooldown_seconds);
+
+    -- A value so large that the interval/timestamp arithmetic overflows must
+    -- fail CONSERVATIVELY (an indefinite cooldown), never back to 30s.
+    begin
+      cooldown_until := ts + make_interval(secs => cooldown_seconds);
+    exception
+      when others then
+        cooldown_until := 'infinity'::timestamptz;
+    end;
+
     existing_cooldown := (c ->> 'cooldown_until')::timestamptz;
     -- Never shorten an existing cooldown.
     if existing_cooldown is not null and existing_cooldown > cooldown_until then
@@ -623,6 +647,7 @@ begin
     end if;
     c := jsonb_set(c, '{cooldown_until}', to_jsonb(cooldown_until));
   end if;
+
 
   c := jsonb_set(c, '{lease_token}', 'null'::jsonb);
   c := jsonb_set(c, '{lease_feed}', 'null'::jsonb);

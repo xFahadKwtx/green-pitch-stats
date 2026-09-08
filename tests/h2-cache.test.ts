@@ -42,6 +42,16 @@ const LEASE_MS = 60_000;
 const DEADLINE_MS = 45_000;
 const PACING_MS = 2_000;
 
+function utcDayStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function utcMonthStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
+
 interface FeedRow {
   schemaVersion: number;
   payload: unknown;
@@ -65,6 +75,8 @@ interface Control {
   dayLimit: number;
   monthUsed: number;
   monthLimit: number;
+  dayStart: number;
+  monthStart: number;
 }
 
 interface AirtableTableState {
@@ -100,6 +112,8 @@ class FakeWorld {
     dayLimit: DAY_LIMIT,
     monthUsed: 0,
     monthLimit: MONTH_LIMIT,
+    dayStart: utcDayStart(Date.parse("2026-09-08T12:00:00.000Z")),
+    monthStart: utcMonthStart(Date.parse("2026-09-08T12:00:00.000Z")),
   };
   tables = new Map<string, AirtableTableState>();
   airtableRequests: Array<{ table: string; at: number }> = [];
@@ -185,6 +199,21 @@ class FakeWorld {
     );
   }
 
+  /** UTC calendar-window normalization; lease and cooldown are preserved. */
+  private normalizeWindows() {
+    const c = this.control;
+    const day = utcDayStart(this.now);
+    const month = utcMonthStart(this.now);
+    if (c.dayStart < day) {
+      c.dayStart = day;
+      c.dayUsed = 0;
+    }
+    if (c.monthStart < month) {
+      c.monthStart = month;
+      c.monthUsed = 0;
+    }
+  }
+
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
     if (Number(args["p_schema_version"]) !== 1) {
@@ -200,6 +229,7 @@ class FakeWorld {
       return this.freshResponse(row);
     }
     if (!this.control.enabled) return { status: "disabled" };
+    this.normalizeWindows();
     if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
       return { status: "busy", recheck_after_ms: 1000 };
     }
@@ -246,6 +276,8 @@ class FakeWorld {
       return { status: "deadline_exceeded" };
     }
     if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
+    // Every grant must charge the CURRENT UTC day/month window.
+    this.normalizeWindows();
     if (c.cooldownUntil !== null && c.cooldownUntil > this.now) return { status: "cooldown" };
     if (c.dayUsed >= c.dayLimit || c.monthUsed >= c.monthLimit) {
       return { status: "budget_exhausted" };
@@ -321,9 +353,7 @@ class FakeWorld {
     if (args["p_kind"] === "rate_limited") {
       const supplied = Number(args["p_retry_after_seconds"]);
       const seconds =
-        Number.isFinite(supplied) && supplied > 0 && supplied <= 604800
-          ? Math.max(30, supplied)
-          : 30;
+        Number.isFinite(supplied) && supplied > 0 ? Math.max(30, supplied) : 30;
       const until = this.now + seconds * 1000;
       // Never shorten an existing cooldown.
       this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
@@ -1161,5 +1191,100 @@ describe("review regressions", () => {
 
   test("34. no test reached a real network host", () => {
     expect(globalThis.fetch).not.toBe(realFetch);
+  });
+});
+
+describe("final review corrections", () => {
+  test("35. a refresh crossing UTC midnight charges pages to the new day", async () => {
+    seedFullBase();
+    world.seedTable(AIRTABLE_TABLES.records, 250);
+    world.control.dayUsed = DAY_LIMIT - 1;
+    world.control.monthUsed = 10;
+    // Move to one second before midnight UTC, then let the refresh cross it.
+    world.now = Date.parse("2026-09-08T23:59:59.000Z");
+    world.control.dayStart = utcDayStart(world.now);
+    world.control.monthStart = utcMonthStart(world.now);
+
+    await getCachedPublicFeed("records", async () => {
+      world.advance(2_000); // now past midnight, still inside the same lease
+      return listAirtableRecords(AIRTABLE_TABLES.records);
+    });
+
+    // The day window reset inside the permit call, so pages are charged to the
+    // current day and none were lost or charged to the old window.
+    expect(world.control.dayStart).toBe(utcDayStart(world.now));
+    expect(world.control.dayUsed).toBe(3);
+    expect(world.control.monthUsed).toBe(13);
+    expect(world.rows.get("production:records")!.payload).not.toBeNull();
+  });
+
+  test("36. a refresh crossing a UTC month boundary resets the month window", async () => {
+    seedFullBase();
+    world.control.monthUsed = MONTH_LIMIT - 1;
+    world.now = Date.parse("2026-09-30T23:59:59.000Z");
+    world.control.dayStart = utcDayStart(world.now);
+    world.control.monthStart = utcMonthStart(world.now);
+
+    await getCachedPublicFeed("records", async () => {
+      world.advance(2_000); // into October
+      return listAirtableRecords(AIRTABLE_TABLES.records);
+    });
+
+    expect(world.control.monthStart).toBe(utcMonthStart(world.now));
+    expect(world.control.monthUsed).toBe(1);
+    expect(world.rows.get("production:records")!.payload).not.toBeNull();
+  });
+
+  test("37. a Retry-After longer than 7 days is honoured in full", async () => {
+    seedFullBase();
+    const tenDays = 864_000;
+    world.seedTable(AIRTABLE_TABLES.records, 10, {
+      behaviour: "429",
+      retryAfter: String(tenDays),
+    });
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.control.cooldownUntil).toBe(world.now + tenDays * 1000);
+  });
+
+  test("38. a fresh window exhausted during the RPC is not served", async () => {
+    seedFullBase();
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const served = world.airtableRequests.length;
+
+    world.advance(FEED_TTL_SECONDS * 1000 - 1_000); // 1s of freshness left
+    world.rpcAdvanceMs["h2_get_or_claim"] = 1_000; // fully consumed in flight
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    // The stale-by-a-hair payload was rejected and a real refresh happened.
+    expect(world.airtableRequests.length).toBeGreaterThan(served);
+  });
+
+  test("39. a rejected completion calls h2_fail_refresh exactly once", async () => {
+    seedFullBase();
+    await expect(
+      getCachedPublicFeed("records", async () => {
+        await listAirtableRecords(AIRTABLE_TABLES.records);
+        // Not an array: the coordinator refuses to publish it.
+        return { bad: true } as unknown as unknown[];
+      }),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.rpcCalls.filter((f) => f === "h2_fail_refresh").length).toBe(1);
+    expect(world.rows.get("production:records")!.payload).toBeNull();
+    expect(world.control.leaseToken).toBeNull();
+  });
+
+  test("40. exceeding the deadline before completion never publishes", async () => {
+    seedFullBase();
+    await expect(
+      getCachedPublicFeed("records", async () => {
+        const rows = await listAirtableRecords(AIRTABLE_TABLES.records);
+        world.advance(DEADLINE_MS); // deadline gone before the finish call
+        return rows;
+      }),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.rpcCalls.filter((f) => f === "h2_finish_refresh").length).toBe(0);
+    expect(world.rpcCalls.filter((f) => f === "h2_fail_refresh").length).toBe(1);
+    expect(world.rows.get("production:records")!.payload).toBeNull();
   });
 });

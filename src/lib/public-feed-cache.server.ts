@@ -149,7 +149,7 @@ function isLegacyJwtKey(key: string): boolean {
 }
 
 /** Single PostgREST RPC call with a hard timeout. Never retried. */
-async function rpc(fn: string, args: Json): Promise<Json> {
+async function rpc(fn: string, args: Json, extraSignal?: AbortSignal): Promise<Json> {
   const url = process.env["SUPABASE_URL"];
   const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (!url || !key) throw new FeedUnavailableError("coordinator credentials unavailable");
@@ -161,17 +161,24 @@ async function rpc(fn: string, args: Json): Promise<Json> {
   // Opaque sb_secret_* keys are not JWTs; only legacy keys use a bearer.
   if (isLegacyJwtKey(key)) headers["Authorization"] = `Bearer ${key}`;
 
+  // The 5s RPC ceiling always applies; callers may add the remaining refresh
+  // deadline so a completion call cannot outlive its own lease window.
+  const signal = extraSignal
+    ? AbortSignal.any([extraSignal, AbortSignal.timeout(RPC_TIMEOUT_MS)])
+    : AbortSignal.timeout(RPC_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(`${url}/rest/v1/rpc/${fn}`, {
       method: "POST",
       headers,
       body: JSON.stringify(args),
-      signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      signal,
     });
   } catch {
     throw new FeedUnavailableError(`coordinator unreachable (${fn})`);
   }
+
 
   if (!response.ok) {
     // Upstream error bodies are intentionally discarded.
@@ -229,11 +236,17 @@ async function servePublicFeed<T>(
 
     if (status === "fresh") {
       const freshForMs = Number(result["fresh_for_ms"] ?? 0);
-      // Only usable if the entry is still fresh right now, conservatively
-      // measured from before the RPC was issued.
-      if (Number.isFinite(freshForMs) && monotonic() <= beforeRpc + freshForMs) {
+      // Usable only if the entry is STILL fresh right now, conservatively
+      // measured from before the RPC was issued. A window that ran out during
+      // the round trip is treated as stale.
+      if (
+        Number.isFinite(freshForMs) &&
+        freshForMs > 0 &&
+        monotonic() < beforeRpc + freshForMs
+      ) {
         return result["payload"] as T;
       }
+
       if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
       throw new FeedUnavailableError(`feed ${feed} unavailable (stale fresh window)`);
     }
@@ -249,7 +262,7 @@ async function servePublicFeed<T>(
       if (budget <= 0) {
         throw new FeedUnavailableError(`no refresh time remaining for ${feed}`);
       }
-      return runRefresh(cacheKey, feed, token, beforeRpc + budget, budget, load);
+      return runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
     }
 
     if (status === "busy" && attempt < BUSY_RECHECK_DELAYS_MS.length) {
@@ -267,7 +280,6 @@ async function runRefresh<T>(
   feed: FeedName,
   leaseToken: string,
   deadlineAt: number,
-  budgetMs: number,
   load: () => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
@@ -284,7 +296,10 @@ async function runRefresh<T>(
     failed: false,
   };
 
-  const deadlineTimer = setTimeout(() => controller.abort(), budgetMs);
+  // The timer is armed from the deadline anchored BEFORE the claim RPC, so the
+  // round trip's elapsed time is subtracted rather than added.
+  const remainingMs = () => deadlineAt - monotonic();
+  const deadlineTimer = setTimeout(() => controller.abort(), Math.max(0, remainingMs()));
   if (typeof (deadlineTimer as unknown as { unref?: () => void }).unref === "function") {
     (deadlineTimer as unknown as { unref: () => void }).unref();
   }
@@ -294,6 +309,7 @@ async function runRefresh<T>(
     controller.abort();
     const rateLimited = error instanceof AirtableRateLimitError;
     try {
+      // Cleanup is allowed its own RPC ceiling, outside the refresh deadline.
       await rpc("h2_fail_refresh", {
         p_cache_key: cacheKey,
         p_lease_token: leaseToken,
@@ -308,28 +324,38 @@ async function runRefresh<T>(
       : new FeedUnavailableError(`refresh failed for ${feed}`);
   };
 
+  const guard = (stage: string) => {
+    if (controller.signal.aborted) {
+      throw new FeedUnavailableError(`refresh aborted (${stage})`);
+    }
+    if (remainingMs() <= 0) {
+      throw new FeedUnavailableError(`refresh deadline exceeded (${stage})`);
+    }
+  };
+
   try {
+    // Exactly one failure path: any throw below runs h2_fail_refresh once.
     let payload: T;
     try {
+      guard("before load");
       payload = await refreshStore.run(ctx, load);
-    } catch (error) {
-      return await abandon(error);
-    }
+      guard("before finish");
 
-    // The finish attempt is part of the refresh: the deadline timer stays armed
-    // until it concludes, and a failed completion runs the same cleanup.
-    try {
-      const finished = await rpc("h2_finish_refresh", {
-        p_cache_key: cacheKey,
-        p_lease_token: leaseToken,
-        p_payload: payload as unknown as Json,
-        p_page_counts: ctx.pageCounts,
-      });
+      const finished = await rpc(
+        "h2_finish_refresh",
+        {
+          p_cache_key: cacheKey,
+          p_lease_token: leaseToken,
+          p_payload: payload as unknown as Json,
+          p_page_counts: ctx.pageCounts,
+        },
+        // The completion call cannot outlive the refresh deadline.
+        controller.signal,
+      );
       if (String(finished["status"] ?? "") !== "published") {
-        return await abandon(
-          new FeedUnavailableError(`refresh result rejected for ${feed}`),
-        );
+        throw new FeedUnavailableError(`refresh result rejected for ${feed}`);
       }
+      guard("after finish");
     } catch (error) {
       return await abandon(error);
     }
@@ -339,6 +365,7 @@ async function runRefresh<T>(
     clearTimeout(deadlineTimer);
   }
 }
+
 
 function enqueue<T>(ctx: RefreshContext, task: () => Promise<T>): Promise<T> {
   const run = ctx.queue.then(task, task);
