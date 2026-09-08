@@ -16,13 +16,14 @@ export async function fetchRecordsFromAirtable(): Promise<RecordEntry[]> {
   const [recordRows, playerRows] = await Promise.all([
     listAirtableRecords(AIRTABLE_TABLES.records),
     listAirtableRecords(AIRTABLE_TABLES.playersDatabase, {
-      fields: ["Official Name EN", "Official Name AR"],
+      fields: ["Official Name EN", "Official Name AR", "Show On Website"],
     }),
   ]);
 
-  /** Airtable player record id -> { nameEn, nameAr } */
+  /** Airtable player record id -> { nameEn, nameAr } (website-visible players only) */
   const playerNames = new Map<string, { nameEn: string; nameAr: string }>();
   for (const row of playerRows) {
+    if (row.fields["Show On Website"] !== true) continue;
     playerNames.set(row.id, {
       nameEn: str(row.fields["Official Name EN"]),
       nameAr: str(row.fields["Official Name AR"]),
