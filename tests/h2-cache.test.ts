@@ -26,6 +26,10 @@ import {
 } from "../src/lib/public-feed-cache.server";
 import { AIRTABLE_TABLES, listAirtableRecords } from "../src/lib/airtable.server";
 import { fetchRecordsFromAirtable } from "../src/lib/records.server";
+import { fetchPlayersFromAirtable } from "../src/lib/airtable-players.server";
+import { fetchStoreFromAirtable } from "../src/lib/store.server";
+import { fetchUpcomingGamesFromAirtable } from "../src/lib/upcoming-games.server";
+
 
 process.env["SUPABASE_URL"] = "http://coordinator.test";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] = "sb_secret_dummy_test_value";
@@ -66,15 +70,25 @@ interface Control {
 interface AirtableTableState {
   records: Array<{ id: string; fields: Record<string, unknown> }>;
   /** Optional per-page behaviour override. */
-  behaviour?: "ok" | "429" | "500" | "timeout" | "fail-after-first";
+  behaviour?:
+    | "ok"
+    | "429"
+    | "500"
+    | "timeout"
+    | "fail-after-first"
+    | "no-records-array"
+    | "malformed-record"
+    | "bad-offset";
+
   retryAfter?: string;
 }
 
 class FakeWorld {
   now = Date.parse("2026-09-08T12:00:00.000Z");
   rows = new Map<string, FeedRow>();
+  /** Mirrors the seed: the coordinator ships DISABLED until activated. */
   control: Control = {
-    enabled: true,
+    enabled: false,
     leaseToken: null,
     leaseFeed: null,
     leaseStartedAt: null,
@@ -93,6 +107,8 @@ class FakeWorld {
   postgresDown = false;
   /** Extra real latency injected into permit RPCs (window-expiry testing). */
   slowPermitMs = 0;
+  /** Fake-clock time consumed INSIDE an RPC round trip, per rpc name. */
+  rpcAdvanceMs: Record<string, number> = {};
 
   tokenSeq = 0;
 
@@ -132,6 +148,8 @@ class FakeWorld {
   rpc(fn: string, args: Record<string, unknown>): unknown {
     this.rpcCalls.push(fn);
     if (this.postgresDown) throw new Error("coordinator down");
+    // Time consumed while the RPC is in flight (DB clock advances).
+    this.advance(this.rpcAdvanceMs[fn] ?? 0);
 
     if (fn === "h2_get_or_claim") return this.getOrClaim(args);
     if (fn === "h2_take_page_permit") return this.takePermit(args);
@@ -146,20 +164,44 @@ class FakeWorld {
     return row;
   }
 
+  private freshResponse(row: FeedRow) {
+    return {
+      status: "fresh",
+      payload: row.payload,
+      fresh_until: row.freshUntil,
+      fresh_for_ms: row.freshUntil! - this.now,
+    };
+  }
+
+  private ownerInvalid(key: string, token: unknown): boolean {
+    const c = this.control;
+    return (
+      token === null ||
+      token === undefined ||
+      c.leaseToken === null ||
+      c.leaseToken !== token ||
+      c.leaseFeed !== key ||
+      (c.leaseExpiresAt ?? 0) <= this.now
+    );
+  }
+
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
+    if (Number(args["p_schema_version"]) !== 1) {
+      throw new Error("unsupported schema version");
+    }
     const row = this.row(key);
     if (
       row.payload !== null &&
       row.freshUntil !== null &&
       row.freshUntil > this.now &&
-      row.schemaVersion === Number(args["p_schema_version"])
+      row.schemaVersion === 1
     ) {
-      return { status: "fresh", payload: row.payload, fresh_until: row.freshUntil };
+      return this.freshResponse(row);
     }
     if (!this.control.enabled) return { status: "disabled" };
     if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
-      return { status: "busy", recheck_after_ms: 700 };
+      return { status: "busy", recheck_after_ms: 1000 };
     }
     if (row.retryAfter !== null && row.retryAfter > this.now) {
       return { status: "backoff", retry_after: row.retryAfter };
@@ -179,26 +221,28 @@ class FakeWorld {
     this.control.leaseStartedAt = this.now;
     this.control.leaseExpiresAt = this.now + LEASE_MS;
     this.control.lastPageSequence = 0;
-    row.refreshStartedAt = this.now;
-    return { status: "claimed", lease_token: token, refresh_deadline_ms: DEADLINE_MS };
+    // The prior payload's refresh_started_at is intentionally untouched.
+    return {
+      status: "claimed",
+      lease_token: token,
+      refresh_deadline_ms: DEADLINE_MS,
+      lease_expires_at: this.control.leaseExpiresAt,
+    };
   }
 
   private takePermit(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
     const sequence = Number(args["p_sequence"]);
-    const row = this.row(key);
     const c = this.control;
 
-    if (
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
-    ) {
-      return { status: "expired" };
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "invalid" };
     }
-    if (row.refreshStartedAt === null || this.now > row.refreshStartedAt + DEADLINE_MS) {
+    if (!Number.isInteger(sequence) || sequence < 1) return { status: "invalid" };
+    if (this.ownerInvalid(key, token)) return { status: "expired" };
+    if (!c.enabled) return { status: "disabled" };
+    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
       return { status: "deadline_exceeded" };
     }
     if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
@@ -213,51 +257,81 @@ class FakeWorld {
     c.monthUsed += 1;
     c.lastPageSequence = sequence;
     c.nextRequestAt = this.now + PACING_MS;
-    return { status: "granted", usable_for_ms: 1000, sequence };
+    return {
+      status: "granted",
+      usable_for_ms: 1000,
+      sequence,
+      refresh_deadline_ms: c.leaseStartedAt + DEADLINE_MS - this.now,
+    };
   }
 
   private finish(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
+    const payload = args["p_payload"];
+    const counts = args["p_page_counts"];
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "rejected", reason: "invalid_arguments" };
+    }
+    if (!Array.isArray(payload)) {
+      return { status: "rejected", reason: "invalid_payload" };
+    }
+    if (!counts || typeof counts !== "object" || Array.isArray(counts)) {
+      return { status: "rejected", reason: "invalid_page_counts" };
+    }
+    const values = Object.values(counts as Record<string, unknown>);
+    if (values.some((v) => !Number.isInteger(v) || (v as number) <= 0)) {
+      return { status: "rejected", reason: "invalid_page_counts" };
+    }
     const row = this.row(key);
     const c = this.control;
-    if (
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
-    ) {
-      return { status: "stale_lease" };
+    if (this.ownerInvalid(key, token)) return { status: "stale_lease" };
+    if (!c.enabled) return { status: "rejected", reason: "disabled" };
+    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+      return { status: "rejected", reason: "deadline_exceeded" };
     }
-    const started = row.refreshStartedAt ?? this.now;
-    row.payload = args["p_payload"];
+    const sum = (values as number[]).reduce((a, b) => a + b, 0);
+    if (sum !== c.lastPageSequence) {
+      return { status: "rejected", reason: "page_count_mismatch" };
+    }
+    const started = c.leaseStartedAt;
+    row.payload = payload;
+    row.refreshStartedAt = started;
     row.freshUntil = started + FEED_TTL_SECONDS * 1000;
     row.retryAfter = null;
     row.failureCount = 0;
-    row.lastPageCounts = (args["p_page_counts"] as Record<string, number>) ?? {};
+    row.lastPageCounts = counts as Record<string, number>;
     this.releaseLease();
     return { status: "published", fresh_until: row.freshUntil };
   }
 
   private fail(args: Record<string, unknown>) {
-    const key = String(args["p_cache_key"]);
-    const token = String(args["p_lease_token"]);
+    const key = args["p_cache_key"];
+    const token = args["p_lease_token"];
+    if (typeof key !== "string" || token === null || token === undefined) {
+      return { status: "ignored", reason: "invalid_arguments" };
+    }
     const row = this.row(key);
+    // A stale or expired owner may not alter ANY state.
+    if (this.ownerInvalid(key, token)) return { status: "ignored", reason: "stale_lease" };
+
     row.failureCount += 1;
     const backoff = Math.min(300, 10 * 2 ** Math.min(row.failureCount - 1, 10));
-    row.retryAfter = this.now + backoff * 1000;
+    row.retryAfter = Math.max(row.retryAfter ?? this.now, this.now + backoff * 1000);
     if (args["p_kind"] === "rate_limited") {
-      const supplied = Number(args["p_retry_after_seconds"] ?? 0);
-      const cooldown = Math.min(Math.max(30, Number.isFinite(supplied) ? supplied : 0), 3600);
-      this.control.cooldownUntil = this.now + cooldown * 1000;
+      const supplied = Number(args["p_retry_after_seconds"]);
+      const seconds =
+        Number.isFinite(supplied) && supplied > 0 && supplied <= 604800
+          ? Math.max(30, supplied)
+          : 30;
+      const until = this.now + seconds * 1000;
+      // Never shorten an existing cooldown.
+      this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
     }
-    let released = false;
-    if (this.control.leaseToken === token && this.control.leaseFeed === key) {
-      this.releaseLease();
-      released = true;
-    }
-    return { status: "recorded", released, retry_after: row.retryAfter };
+    this.releaseLease();
+    return { status: "recorded", released: true };
   }
+
 
   private releaseLease() {
     this.control.leaseToken = null;
@@ -295,6 +369,17 @@ class FakeWorld {
     if (state.behaviour === "fail-after-first" && requestIndex > 0) {
       return new Response("upstream detail", { status: 500 });
     }
+    // Malformed 200 responses: each must fail the whole refresh.
+    if (state.behaviour === "no-records-array") {
+      return new Response(JSON.stringify({ records: "nope" }), { status: 200 });
+    }
+    if (state.behaviour === "malformed-record") {
+      return new Response(JSON.stringify({ records: [{ id: 42 }] }), { status: 200 });
+    }
+    if (state.behaviour === "bad-offset") {
+      return new Response(JSON.stringify({ records: [], offset: "" }), { status: 200 });
+    }
+
 
     const offsetParam = url.searchParams.get("offset");
     const start = offsetParam ? Number(offsetParam) : 0;
@@ -354,19 +439,25 @@ function installFetch() {
 
 beforeEach(() => {
   world = new FakeWorld();
+  // Activation is an explicit step; the seed ships disabled.
+  world.control.enabled = true;
   installFetch();
   __testing.setMode("production");
-  // Virtual clock: sleeps advance the fake DB clock instantly.
+  // Virtual clock: sleeps advance the fake DB clock instantly, and the client's
+  // monotonic seam reads the same fake clock.
   __testing.setSleep(async (ms: number) => {
     world.advance(ms);
   });
+  __testing.setMonotonic(() => world.now);
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   __testing.resetSleep();
+  __testing.resetMonotonic();
   __testing.setMode(undefined);
 });
+
 
 function seedFullBase() {
   world.seedTable(AIRTABLE_TABLES.playersDatabase, 122);
@@ -460,12 +551,15 @@ describe("refresh coordination", () => {
       Array.from({ length: 12 }, () => getCachedPublicFeed("records", loader)),
     );
     expect(refreshes).toBe(1);
-    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
-    // Non-owners either waited for the fresh result or failed closed; none
-    // started a second refresh.
+    // Same-instance callers coalesce onto the single in-flight attempt.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim").length).toBe(1);
     expect(world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.records).length)
       .toBe(1);
+    // The map is cleaned up afterwards.
+    expect(__testing.inFlightSize()).toBe(0);
   });
+
 
   test("4. cross-instance: a second instance sees busy, then the published cache", async () => {
     seedFullBase();
@@ -484,12 +578,14 @@ describe("refresh coordination", () => {
     ).rejects.toThrow(FeedUnavailableError);
 
     // A publishes; B now gets the fresh payload with no Airtable traffic.
-    world.rpc("h2_finish_refresh", {
+    const published = world.rpc("h2_finish_refresh", {
       p_cache_key: "production:records",
       p_lease_token: claim["lease_token"],
       p_payload: [{ id: "recA" }],
-      p_page_counts: { [AIRTABLE_TABLES.records]: 1 },
-    });
+      p_page_counts: {},
+    }) as Record<string, unknown>;
+    expect(published["status"]).toBe("published");
+
     const payload = await getCachedPublicFeed("records", async () => {
       throw new Error("should be fresh");
     });
@@ -611,17 +707,18 @@ describe("pagination and permits", () => {
     }
   });
 
-  test("expired permit window is never reused", async () => {
+  test("expired permit window is never reused (RPC elapsed time counts)", async () => {
     seedFullBase();
-    // A slow coordinator round-trip means the 1s usable window has already
-    // elapsed by the time the grant reaches this instance: fail closed.
-    world.slowPermitMs = 1_200;
+    // 1.2s is consumed INSIDE the permit round-trip, so the 1s usable window
+    // has already elapsed when the grant arrives: fail closed, no dispatch.
+    world.rpcAdvanceMs["h2_take_page_permit"] = 1_200;
     await expect(
       getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
     ).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(0);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-  }, 15_000);
+  });
+
 
 });
 
@@ -858,5 +955,211 @@ describe("H1 + response shapes", () => {
     expect(Object.keys((first as Array<Record<string, unknown>>)[0]!).sort()).toEqual(
       ["holderNameAr", "holderNameEn", "id", "nameAr", "nameEn", "value"],
     );
+  });
+});
+
+describe("review regressions", () => {
+  test("22. exact TTL boundary: fresh at 899.999s, stale at exactly 900s", async () => {
+    seedFullBase();
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const before = world.airtableRequests.length;
+
+    world.advance(FEED_TTL_SECONDS * 1000 - 1);
+    await getCachedPublicFeed("records", async () => {
+      throw new Error("must still be fresh");
+    });
+    expect(world.airtableRequests.length).toBe(before);
+
+    world.advance(1); // exactly 900s from refresh START
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    expect(world.airtableRequests.length).toBeGreaterThan(before);
+  });
+
+  test("23. exact 45s refresh deadline: a page at the boundary is refused", async () => {
+    seedFullBase();
+    world.seedTable(AIRTABLE_TABLES.records, 250);
+    await expect(
+      getCachedPublicFeed("records", async () => {
+        // Burn exactly the whole refresh budget before the first page.
+        world.advance(DEADLINE_MS);
+        return listAirtableRecords(AIRTABLE_TABLES.records);
+      }),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
+    expect(world.rows.get("production:records")!.payload).toBeNull();
+  });
+
+  test("24. TTL is measured from refresh START, including RPC elapsed time", async () => {
+    seedFullBase();
+    world.rpcAdvanceMs["h2_finish_refresh"] = 5_000;
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const row = world.rows.get("production:records")!;
+    // fresh_until derives from the lease start, not from publish time.
+    expect(row.freshUntil! - row.refreshStartedAt!).toBe(FEED_TTL_SECONDS * 1000);
+  });
+
+  test("25. a stale/expired owner mutates no coordinator state", async () => {
+    seedFullBase();
+    const claim = world.rpc("h2_get_or_claim", {
+      p_cache_key: "production:records",
+      p_schema_version: 1,
+    }) as Record<string, unknown>;
+    world.advance(LEASE_MS + 1); // lease expired
+    const row = world.rows.get("production:records")!;
+    const snapshot = { ...row };
+    const cooldown = world.control.cooldownUntil;
+
+    const failed = world.rpc("h2_fail_refresh", {
+      p_cache_key: "production:records",
+      p_lease_token: claim["lease_token"],
+      p_kind: "rate_limited",
+      p_retry_after_seconds: 3600,
+    }) as Record<string, unknown>;
+    expect(failed["status"]).toBe("ignored");
+    expect(row.failureCount).toBe(snapshot.failureCount);
+    expect(row.retryAfter).toBe(snapshot.retryAfter);
+    expect(world.control.cooldownUntil).toBe(cooldown);
+  });
+
+  test("26. NULL lease tokens are rejected by every owner operation", async () => {
+    const permit = world.rpc("h2_take_page_permit", {
+      p_cache_key: "production:records",
+      p_lease_token: null,
+      p_sequence: 1,
+    }) as Record<string, unknown>;
+    expect(permit["status"]).toBe("invalid");
+
+    const finish = world.rpc("h2_finish_refresh", {
+      p_cache_key: "production:records",
+      p_lease_token: null,
+      p_payload: [],
+      p_page_counts: {},
+    }) as Record<string, unknown>;
+    expect(finish["status"]).toBe("rejected");
+
+    const fail = world.rpc("h2_fail_refresh", {
+      p_cache_key: null,
+      p_lease_token: null,
+      p_kind: "failure",
+      p_retry_after_seconds: null,
+    }) as Record<string, unknown>;
+    expect(fail["status"]).toBe("ignored");
+    expect(world.rows.get("production:records")!.payload).toBeNull();
+  });
+
+  test("27. the seeded (disabled) coordinator never contacts Airtable", async () => {
+    seedFullBase();
+    world.control.enabled = false;
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("28. disabling mid-lease stops further pages and blocks publishing", async () => {
+    seedFullBase();
+    world.seedTable(AIRTABLE_TABLES.records, 250);
+    await expect(
+      getCachedPublicFeed("records", async () => {
+        world.control.enabled = false;
+        return listAirtableRecords(AIRTABLE_TABLES.records);
+      }),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.rows.get("production:records")!.payload).toBeNull();
+  });
+
+  test("29. a malformed 200 page fails the whole refresh (never an empty page)", async () => {
+    for (const behaviour of ["no-records-array", "malformed-record", "bad-offset"] as const) {
+      world = new FakeWorld();
+      world.control.enabled = true;
+      seedFullBase();
+      world.setTable(AIRTABLE_TABLES.records, { records: [], behaviour });
+      await expect(
+        getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+      ).rejects.toThrow(FeedUnavailableError);
+      expect(world.rows.get("production:records")!.payload).toBeNull();
+    }
+  });
+
+  test("30. no queued page dispatches after one page fails", async () => {
+    seedFullBase();
+    world.seedTable(AIRTABLE_TABLES.records, 250, { behaviour: "fail-after-first" });
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    // Exactly the failing page plus its predecessor; nothing queued after it ran.
+    expect(world.airtableRequests.length).toBe(2);
+  });
+
+  test("31. duplicate offsets abort the refresh before any sibling dispatch", async () => {
+    seedFullBase();
+    await expect(
+      getCachedPublicFeed("records", async () => {
+        const { runAirtablePage } = await import("../src/lib/public-feed-cache.server");
+        await runAirtablePage(AIRTABLE_TABLES.records, "dup", async () => ({ ok: true }));
+        await runAirtablePage(AIRTABLE_TABLES.records, "dup", async () => ({ ok: true }));
+        return [];
+      }),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.rows.get("production:records")!.payload).toBeNull();
+  });
+
+  test("32. independent instances share the coordinator, local coalescing does not", async () => {
+    seedFullBase();
+    // One instance: 6 concurrent callers collapse to a single claim.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+      ),
+    );
+    expect(results.every((r) => Array.isArray(r))).toBe(true);
+    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim").length).toBe(1);
+
+    // Another instance (raw coordinator call) is served from the shared cache.
+    const other = world.rpc("h2_get_or_claim", {
+      p_cache_key: "production:records",
+      p_schema_version: 1,
+    }) as Record<string, unknown>;
+    expect(other["status"]).toBe("fresh");
+    expect(Number(other["fresh_for_ms"])).toBeGreaterThan(0);
+  });
+
+  test("33. the four business loaders keep their output shapes and page costs", async () => {
+    seedFullBase();
+    const players = (await getCachedPublicFeed("players", () =>
+      fetchPlayersFromAirtable(),
+    )) as unknown[];
+    expect(Array.isArray(players)).toBe(true);
+    expect(
+      world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.playersDatabase).length,
+    ).toBe(2);
+
+    const upcoming = (await getCachedPublicFeed("upcoming-games", () =>
+      fetchUpcomingGamesFromAirtable(),
+    )) as unknown[];
+    expect(Array.isArray(upcoming)).toBe(true);
+    expect(
+      world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.upcomingGames).length,
+    ).toBe(1);
+
+    const store = (await getCachedPublicFeed("store", () =>
+      fetchStoreFromAirtable(),
+    )) as unknown[];
+    expect(Array.isArray(store)).toBe(true);
+    expect(
+      world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.store).length,
+    ).toBe(1);
+
+    const records = (await getCachedPublicFeed("records", () =>
+      fetchRecordsFromAirtable(),
+    )) as unknown[];
+    expect(Array.isArray(records)).toBe(true);
+    expect(
+      world.airtableRequests.filter((r) => r.table === AIRTABLE_TABLES.records).length,
+    ).toBe(1);
+  });
+
+  test("34. no test reached a real network host", () => {
+    expect(globalThis.fetch).not.toBe(realFetch);
   });
 });

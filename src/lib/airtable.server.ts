@@ -36,17 +36,68 @@ export interface AirtableRecord {
 }
 
 interface AirtableListResponse {
-  records?: AirtableRecord[];
+  records: AirtableRecord[];
   offset?: string;
 }
 
-/** Seconds from a Retry-After header, when Airtable supplies a usable value. */
+/**
+ * Seconds from a Retry-After header. Supports both delay-seconds and the
+ * HTTP-date form, and honours values longer than one hour.
+ */
 function retryAfterSeconds(response: Response): number | null {
   const header = response.headers.get("retry-after");
   if (!header) return null;
-  const seconds = Number(header.trim());
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+  const text = header.trim();
+  if (!text) return null;
+
+  const seconds = Number(text);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds;
+
+  const date = Date.parse(text);
+  if (Number.isFinite(date)) {
+    const delta = (date - Date.now()) / 1000;
+    if (delta > 0) return delta;
+  }
+  return null;
 }
+
+/**
+ * Validates an Airtable list response. A malformed 200 must fail the whole
+ * refresh — records are never silently treated as an empty page.
+ */
+function parseListResponse(body: unknown): AirtableListResponse {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Airtable response was not an object");
+  }
+  const raw = body as Record<string, unknown>;
+  const records = raw["records"];
+  if (!Array.isArray(records)) {
+    throw new Error("Airtable response had no records array");
+  }
+  for (const record of records) {
+    if (
+      !record ||
+      typeof record !== "object" ||
+      Array.isArray(record) ||
+      typeof (record as { id?: unknown }).id !== "string" ||
+      !(record as { id: string }).id ||
+      typeof (record as { fields?: unknown }).fields !== "object" ||
+      (record as { fields: unknown }).fields === null ||
+      Array.isArray((record as { fields: unknown }).fields)
+    ) {
+      throw new Error("Airtable response contained a malformed record");
+    }
+  }
+  const offset = raw["offset"];
+  if (offset !== undefined && (typeof offset !== "string" || offset === "")) {
+    throw new Error("Airtable response had an invalid offset");
+  }
+  return {
+    records: records as AirtableRecord[],
+    ...(typeof offset === "string" ? { offset } : {}),
+  };
+}
+
 
 
 /** Fetch every record of a table (read-only, follows Airtable pagination). */
@@ -98,12 +149,20 @@ export async function listAirtableRecords(
           throw new Error(`Airtable request failed [${response.status}]`);
         }
 
-        return (await response.json()) as AirtableListResponse;
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          throw new Error("Airtable response was not valid JSON");
+        }
+        // A malformed 200 fails the entire refresh; never silently empty.
+        return parseListResponse(body);
       },
     );
 
-    records.push(...(payload.records ?? []));
+    records.push(...payload.records);
     offset = payload.offset;
+
   } while (offset);
 
 
