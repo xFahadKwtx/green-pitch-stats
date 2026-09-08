@@ -18,7 +18,14 @@ export const PUBLIC_ERROR_NAME = "PublicError";
  */
 export function createPublicError(): Error {
   const error = new Error(PUBLIC_ERROR_MESSAGE);
-  error.name = PUBLIC_ERROR_NAME;
+  // Non-enumerable so the error has no own enumerable properties at all.
+  Object.defineProperty(error, "name", {
+    value: PUBLIC_ERROR_NAME,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+
   // Stack strings can embed file paths and framework internals; drop it.
   Object.defineProperty(error, "stack", {
     value: "",
