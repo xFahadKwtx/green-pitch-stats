@@ -857,6 +857,43 @@ describe("failure handling", () => {
     expect(row.retryAfter! - world.now).toBeLessThanOrEqual(300_000);
   });
 
+  test("13b. Airtable network rejection is counted, sanitized, and stops queued pages", async () => {
+    seedFullBase();
+    // Multi-page table: only the first page may be dispatched before the failure.
+    world.setTable(AIRTABLE_TABLES.records, {
+      records: Array.from({ length: 250 }, (_, i) => ({ id: `rec${i}`, fields: {} })),
+      behaviour: "network-error",
+    });
+    const dayUsedBefore = world.control.dayUsed;
+
+    let surfaced: unknown;
+    try {
+      await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+      throw new Error("expected failure");
+    } catch (error) {
+      surfaced = error;
+    }
+
+    // One sanitized error surfaces, distinct from an HTTP status leak.
+    expect(surfaced).toBeInstanceOf(FeedUnavailableError);
+    const message = (surfaced as Error).message;
+    expect(message).not.toContain("upstream detail");
+    expect(message).not.toContain("ECONNRESET");
+
+    // The attempted page is counted exactly once and no queued page dispatched.
+    expect(world.airtableRequests.length).toBe(1);
+    expect(world.control.dayUsed).toBe(dayUsedBefore + 1);
+
+    // No partial publish; lease released with the 10s first-failure backoff.
+    const row = world.rows.get("production:records")!;
+    expect(row.payload).toBeNull();
+    expect(row.failureCount).toBe(1);
+    expect(row.retryAfter).toBe(world.now + 10_000);
+    expect(world.control.leaseToken).toBeNull();
+  });
+
+
+
   test("14. partial pagination is discarded and never published", async () => {
     seedFullBase();
     world.setTable(AIRTABLE_TABLES.records, {
