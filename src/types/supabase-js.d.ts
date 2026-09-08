@@ -15,6 +15,11 @@ declare module "@supabase/supabase-js" {
   export type User = any;
   export type AuthChangeEvent = string;
 
-  export const createClient: any;
+  export function createClient<Database = any, Schema = any, Extra = any>(
+    supabaseUrl: string,
+    supabaseKey: string,
+    options?: any,
+  ): any;
 }
+
 
