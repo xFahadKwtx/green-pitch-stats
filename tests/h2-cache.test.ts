@@ -389,6 +389,10 @@ class FakeWorld {
       });
     }
     if (state.behaviour === "500") return new Response("upstream detail", { status: 500 });
+    if (state.behaviour === "network-error") {
+      // Socket-style transport rejection: fetch rejects, no HTTP response at all.
+      throw new TypeError("fetch failed: upstream detail ECONNRESET");
+    }
     if (state.behaviour === "timeout") {
       // Simulate a body/response that never resolves until aborted.
       return new Promise<Response>((_, reject) => {
