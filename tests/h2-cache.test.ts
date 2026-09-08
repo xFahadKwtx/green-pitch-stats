@@ -86,6 +86,7 @@ interface AirtableTableState {
     | "ok"
     | "429"
     | "500"
+    | "network-error"
     | "timeout"
     | "fail-after-first"
     | "no-records-array"
