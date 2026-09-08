@@ -262,7 +262,7 @@ async function servePublicFeed<T>(
       if (budget <= 0) {
         throw new FeedUnavailableError(`no refresh time remaining for ${feed}`);
       }
-      return runRefresh(cacheKey, feed, token, beforeRpc + budget, budget, load);
+      return runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
     }
 
     if (status === "busy" && attempt < BUSY_RECHECK_DELAYS_MS.length) {
@@ -280,7 +280,6 @@ async function runRefresh<T>(
   feed: FeedName,
   leaseToken: string,
   deadlineAt: number,
-  budgetMs: number,
   load: () => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
@@ -304,7 +303,6 @@ async function runRefresh<T>(
   if (typeof (deadlineTimer as unknown as { unref?: () => void }).unref === "function") {
     (deadlineTimer as unknown as { unref: () => void }).unref();
   }
-  void budgetMs;
 
   const abandon = async (error: unknown): Promise<never> => {
     ctx.failed = true;
