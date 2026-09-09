@@ -409,6 +409,29 @@ async function runRefresh<T>(
       payload = await refreshStore.run(ctx, load);
       guard("before finish");
 
+      // Fix #2 — never replace an existing NON-EMPTY players payload with an
+      // empty array. The empty result is discarded (not published), the lease is
+      // released, and the last known good players payload is served instead. An
+      // empty payload is still accepted when no non-empty payload exists.
+      if (feed === "players" && Array.isArray(payload) && payload.length === 0) {
+        const previous = await readStoredArrayPayload(cacheKey);
+        if (previous) {
+          ctx.failed = true;
+          controller.abort();
+          try {
+            await rpc("h2_fail_refresh", {
+              p_cache_key: cacheKey,
+              p_lease_token: leaseToken,
+              p_kind: "failure",
+              p_retry_after_seconds: null,
+            });
+          } catch {
+            // Coordinator write failed; the lease expires on its own.
+          }
+          return previous as unknown as T;
+        }
+      }
+
       const finished = await rpc(
         "h2_finish_refresh",
         {
@@ -429,6 +452,7 @@ async function runRefresh<T>(
     }
 
     return payload;
+
   } finally {
     clearTimeout(deadlineTimer);
   }
