@@ -15,7 +15,7 @@ let playerRows: AirtableRecord[] = [];
 let profilePlayer: Player;
 let reads: string[] = [];
 const monthRow: AirtableRecord = { id: "recMonth123456789", fields: {
-  Player: [PLAYER_RECORD], "Games played": 3, Goals: 2, Assists: 1,
+  "PLAYERS DATABASE 2": [PLAYER_RECORD], "Games played": 3, Goals: 2, Assists: 1,
   "SHOTS ttl - SOT": "8 - 4", Passes: "9 - 7", Tackles: 6, Clearences: 3,
   "Highest Rating": 8.25, "Lowest Rating": 7.5, MVP: 1, "GK saves": "8 - 6",
 } };

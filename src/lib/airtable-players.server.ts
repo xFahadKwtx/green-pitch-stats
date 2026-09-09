@@ -12,7 +12,6 @@ import type { MonthKey, MonthStats, Player, Position } from "@/data/types";
 
 import {
   AIRTABLE_TABLES,
-  linkedRecordIds,
   listAirtableRecords,
   optNumeric,
   optPair,
@@ -25,6 +24,13 @@ const MONTH_TABLES: Record<MonthKey, string> = {
   "2026-07": AIRTABLE_TABLES.statsJuly,
   "2026-08": AIRTABLE_TABLES.statsAugust,
   "2026-09": AIRTABLE_TABLES.statsSeptember,
+};
+
+const MONTH_PLAYER_FIELDS: Record<MonthKey, string> = {
+  "2026-06": "احصائيات اللاعبين",
+  "2026-07": "PLAYERS DATABASE",
+  "2026-08": "PLAYERS DATABASE 2",
+  "2026-09": "PLAYERS DATABASE 2",
 };
 
 const OUTFIELD_GROUP: Record<string, Position> = {
@@ -123,6 +129,14 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     ...months.map((month) => listAirtableRecords(MONTH_TABLES[month])),
   ]);
 
+  const masterPlayerIds = new Set(playerRows.map((record) => record.id));
+  const publicPlayerRecordIds = new Set(
+    playerRows
+      .filter((record) => record.fields["Show On Website"] === true &&
+        (str(record.fields["Official Name EN"]) || str(record.fields["Official Name AR"])))
+      .map((record) => record.id),
+  );
+
   /** month -> Airtable player record id -> stats */
   const statsByMonth = new Map<MonthKey, Map<string, MonthStats>>();
   months.forEach((month, index) => {
@@ -130,14 +144,23 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     for (const record of monthRows[index] ?? []) {
       const stats = monthStats(record.fields);
       if (!hasAnyValue(stats)) continue;
-      for (const playerRecordId of new Set(linkedRecordIds(record.fields))) {
-        map.set(playerRecordId, stats);
-      }
+      const links = record.fields[MONTH_PLAYER_FIELDS[month]];
+      const owners = new Set(
+        Array.isArray(links)
+          ? links.filter((id): id is string => typeof id === "string" && masterPlayerIds.has(id))
+          : [],
+      );
+      if (owners.size > 1) throw new Error("Ambiguous monthly player ownership");
+      const [playerRecordId] = owners;
+      if (!playerRecordId || !publicPlayerRecordIds.has(playerRecordId)) continue;
+      if (map.has(playerRecordId)) throw new Error("Duplicate monthly player statistics");
+      map.set(playerRecordId, stats);
     }
     statsByMonth.set(month, map);
   });
 
   const players: Player[] = [];
+  const publicIds = new Set<string>();
 
   for (const record of playerRows) {
     if (record.fields["Show On Website"] !== true) continue;
@@ -145,6 +168,10 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     const name = str(record.fields["Official Name EN"]);
     const nameAr = str(record.fields["Official Name AR"]);
     if (!name && !nameAr) continue;
+
+    const id = str(record.fields["Player ID"]) || record.id;
+    if (publicIds.has(id)) throw new Error("Duplicate public player identifier");
+    publicIds.add(id);
 
     const positions = selects(record.fields["Position"])
       .map((p) => p.trim().toUpperCase())
@@ -161,7 +188,7 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     }
 
     players.push({
-      id: str(record.fields["Player ID"]) || record.id,
+      id,
       name: name || nameAr,
       nameAr: nameAr || name,
       positions,

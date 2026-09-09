@@ -39,7 +39,7 @@ mock.module("../src/lib/airtable.server", () => ({
   listAirtableRecords: async (table: string) => {
     if (table === airtable.AIRTABLE_TABLES.playersDatabase) return records;
     if (table === airtable.AIRTABLE_TABLES.statsJune) {
-      return records.map((r) => ({ id: `${r.id}Month`, fields: { Player: [r.id], ...monthFields } }));
+      return records.map((r) => ({ id: `${r.id}Month`, fields: { "احصائيات اللاعبين": [r.id], ...monthFields } }));
     }
     return [];
   },
