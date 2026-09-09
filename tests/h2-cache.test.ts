@@ -442,7 +442,25 @@ function installFetch() {
           : (input as Request).url;
     const url = new URL(raw);
 
+    if (url.host === "coordinator.test" && url.pathname.endsWith("/airtable_public_cache")) {
+      // Read-only stale lookup used by the players fallback.
+      const headers = new Headers(init?.headers);
+      expect(headers.get("apikey")).toBeTruthy();
+      expect(String(init?.method ?? "GET").toUpperCase()).toBe("GET");
+      world.selectCalls += 1;
+      if (world.selectFails) return new Response("{}", { status: 500 });
+      const key = (url.searchParams.get("cache_key") ?? "").replace(/^eq\./, "");
+      const row = world.rows.get(key);
+      const body =
+        row && row.schemaVersion === 1 ? [{ payload: row.payload ?? null }] : [];
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (url.host === "coordinator.test") {
+
       const fn = url.pathname.split("/").pop() ?? "";
       const args = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       // Never send Authorization for opaque sb_secret_* keys.
