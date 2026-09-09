@@ -122,6 +122,10 @@ class FakeWorld {
   postgresDown = false;
   /** Extra real latency injected into permit RPCs (window-expiry testing). */
   slowPermitMs = 0;
+  /** Read-only stale-payload SELECTs issued by the players fallback. */
+  selectCalls = 0;
+  selectFails = false;
+
   /** Fake-clock time consumed INSIDE an RPC round trip, per rpc name. */
   rpcAdvanceMs: Record<string, number> = {};
 
