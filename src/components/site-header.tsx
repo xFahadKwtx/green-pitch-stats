@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Menu, X, Globe } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import logoAsset from "@/assets/logo.png.asset.json";
 import { useI18n, type TKey } from "@/lib/i18n";
@@ -22,21 +22,65 @@ const links: { to: string; key: TKey }[] = [
 export function SiteHeader() {
   const { t, lang, toggle } = useI18n();
   const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const brandRef = useRef<HTMLAnchorElement>(null);
+
+  const closeMenu = useCallback((restoreTrigger = false) => {
+    const desktop = window.matchMedia("(min-width: 80rem)").matches;
+    const active = document.activeElement;
+    // Move focus before making the panel inert, but respect focus already
+    // moved by navigation. On desktop use the brand, not the hidden trigger.
+    if (
+      restoreTrigger ||
+      panelRef.current?.contains(active) ||
+      (desktop && active === triggerRef.current)
+    ) {
+      (desktop ? brandRef.current : triggerRef.current)?.focus({ preventScroll: true });
+    }
+    setOpen(false);
+  }, []);
 
   useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousOverflow;
     };
   }, [open]);
 
+  useEffect(() => {
+    // Match Tailwind's xl breakpoint (1280px at the default font size).
+    const desktop = window.matchMedia("(min-width: 80rem)");
+    const onChange = () => {
+      if (desktop.matches) closeMenu();
+    };
+    onChange();
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, [closeMenu]);
+
   return (
-    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+    <header
+      className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl"
+      onKeyDown={(event) => {
+        if (open && event.key === "Escape") {
+          event.preventDefault();
+          closeMenu(true);
+        }
+      }}
+      onBlur={(event) => {
+        if (open && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:h-20 sm:px-6">
         <Link
           to="/"
-          onClick={() => setOpen(false)}
-          className="flex min-w-0 shrink-0 items-center gap-2"
+          ref={brandRef}
+          onClick={() => closeMenu()}
+          className="flex min-w-0 items-center gap-2"
         >
           <img
             src={logoAsset.url}
@@ -47,13 +91,13 @@ export function SiteHeader() {
             <span className="block truncate font-display text-sm leading-tight font-bold tracking-wide uppercase sm:text-lg">
               {t("brand")}
             </span>
-            <span className="hidden text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:block">
+            <span className="hidden truncate text-[10px] tracking-[0.18em] text-muted-foreground uppercase sm:block">
               {t("brandTag")}
             </span>
           </span>
         </Link>
 
-        <nav className="ms-auto hidden flex-1 items-center justify-end gap-0.5 lg:flex">
+        <nav className="ms-auto hidden flex-1 items-center justify-end gap-0.5 xl:flex">
           {links.map((l) => (
             <Link
               key={l.to}
@@ -66,7 +110,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="ms-auto flex shrink-0 items-center gap-2 lg:ms-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2 xl:ms-2">
           <button
             type="button"
             onClick={toggle}
@@ -78,10 +122,12 @@ export function SiteHeader() {
           </button>
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            ref={triggerRef}
+            onClick={() => (open ? closeMenu() : setOpen(true))}
             aria-label={open ? t("close") : t("menu")}
             aria-expanded={open}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-border text-foreground lg:hidden"
+            aria-controls={panelId}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-border text-foreground xl:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -89,8 +135,11 @@ export function SiteHeader() {
       </div>
 
       <div
+        ref={panelRef}
+        id={panelId}
+        inert={!open}
         className={cn(
-          "overflow-y-auto border-t border-border/70 bg-background/95 transition-[max-height] duration-300 lg:hidden",
+          "overflow-y-auto border-t border-border/70 bg-background/95 transition-[max-height] duration-300 xl:hidden",
           open
             ? "max-h-[calc(100dvh-4rem)] sm:max-h-[calc(100dvh-5rem)]"
             : "max-h-0",
@@ -103,7 +152,7 @@ export function SiteHeader() {
               key={l.to}
               to={l.to}
               activeOptions={{ exact: l.to === "/" }}
-              onClick={() => setOpen(false)}
+              onClick={() => closeMenu()}
               className="rounded-xl px-4 py-3.5 text-base font-medium text-muted-foreground transition-colors hover:bg-glass hover:text-foreground data-[status=active]:bg-glass data-[status=active]:text-gold"
             >
               {t(l.key)}
