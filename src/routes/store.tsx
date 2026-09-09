@@ -8,6 +8,7 @@ import type { StoreCategorySection, StoreItem } from "@/data/types";
 import { contactInfo } from "@/data/site";
 import { useI18n } from "@/lib/i18n";
 import { storeQueryOptions } from "@/lib/store-query";
+import { getStorePrice, type StorePrice } from "@/lib/store-pricing";
 
 export const Route = createFileRoute("/store")({
   head: () => ({
@@ -34,25 +35,23 @@ export const Route = createFileRoute("/store")({
   component: StorePage,
 });
 
-function pointsLabel(points: number | null, lang: "en" | "ar") {
-  const value = (points ?? 0).toLocaleString(lang === "ar" ? "ar-KW" : "en-GB");
+function pointsLabel(points: number, lang: "en" | "ar") {
+  const value = points.toLocaleString(lang === "ar" ? "ar-KW" : "en-GB", {
+    maximumSignificantDigits: 21,
+  });
   return lang === "ar" ? `${value} نقاط` : `${value} Points`;
 }
 
-function orderLink(product: StoreItem, lang: "en" | "ar") {
+function orderLink(product: StoreItem, price: StorePrice | null, lang: "en" | "ar") {
+  if (!price) return null;
   const productName = lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
-  const points = product.requiredPoints ?? 0;
+  const points = pointsLabel(price.effectivePoints, lang);
   const message =
     lang === "ar"
-      ? ["السلام عليكم، أرغب بهذا المنتج:", "", productName, `النقاط المطلوبة: ${points} نقطة`]
-      : ["Hello, I would like to order this product:", "", productName, `Required Points: ${points} Points`];
+      ? ["السلام عليكم، أرغب بهذا المنتج:", "", productName, `النقاط المطلوبة: ${points}`]
+      : ["Hello, I would like to order this product:", "", productName, `Required Points: ${points}`];
 
   return `https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent(message.join("\n"))}`;
-}
-
-/** Whether a product has a valid discounted redemption price. */
-function hasDiscount(product: StoreItem) {
-  return product.discountPoints != null && product.discountPoints > 0;
 }
 
 /**
@@ -62,35 +61,39 @@ function hasDiscount(product: StoreItem) {
  *   the Discount Points value next to it, more visually prominent.
  */
 function PriceTag({
-  product,
+  price,
   variant,
 }: {
-  product: StoreItem;
+  price: StorePrice | null;
   variant: "badge" | "full";
 }) {
   const { lang } = useI18n();
-  const discounted = hasDiscount(product);
+  if (!price) {
+    return (
+      <span className="text-sm text-muted-foreground">
+        {lang === "ar" ? "السعر غير متاح" : "Price unavailable"}
+      </span>
+    );
+  }
 
   if (variant === "badge") {
     // Compact badge: when discounted, show the discounted price as the headline.
     return (
       <>
         <Sparkles className="h-3 w-3" aria-hidden />
-        {discounted
-          ? pointsLabel(product.discountPoints, lang)
-          : pointsLabel(product.requiredPoints, lang)}
+        {pointsLabel(price.effectivePoints, lang)}
       </>
     );
   }
 
-  if (discounted) {
+  if (price.discounted) {
     return (
       <span className="flex flex-col gap-1 leading-tight">
         <span className="text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm">
-          {pointsLabel(product.requiredPoints, lang)}
+          {pointsLabel(price.originalPoints, lang)}
         </span>
         <span className="stat-number text-xl text-gold sm:text-2xl">
-          {pointsLabel(product.discountPoints, lang)}
+          {pointsLabel(price.effectivePoints, lang)}
         </span>
       </span>
     );
@@ -98,7 +101,7 @@ function PriceTag({
 
   return (
     <span className="stat-number whitespace-nowrap text-xl text-gold sm:text-2xl">
-      {pointsLabel(product.requiredPoints, lang)}
+      {pointsLabel(price.effectivePoints, lang)}
     </span>
   );
 }
@@ -107,6 +110,8 @@ function ProductCard({ product }: { product: StoreItem }) {
   const { t, lang } = useI18n();
   const name = lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
   const description = lang === "ar" ? product.descriptionAr : product.descriptionEn;
+  const price = getStorePrice(product);
+  const href = orderLink(product, price, lang);
 
   return (
     <article className="glass-card group flex h-full flex-col overflow-hidden transition-transform duration-300 hover:-translate-y-1 hover:border-gold/40">
@@ -124,7 +129,7 @@ function ProductCard({ product }: { product: StoreItem }) {
           </div>
         )}
         <span className="absolute top-2 end-2 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
-          <PriceTag product={product} variant="badge" />
+          <PriceTag price={price} variant="badge" />
         </span>
       </div>
 
@@ -138,17 +143,28 @@ function ProductCard({ product }: { product: StoreItem }) {
 
         <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
           <span className="min-w-0 shrink-0">
-            <PriceTag product={product} variant="full" />
+            <PriceTag price={price} variant="full" />
           </span>
-          <a
-            href={orderLink(product, lang)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
-          >
-            {t("store.order")}
-            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-          </a>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+            >
+              {t("store.order")}
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground opacity-50"
+            >
+              {t("store.order")}
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
         </div>
       </div>
     </article>

@@ -6,7 +6,8 @@
  */
 import type { StoreCategorySection, StoreItem } from "@/data/types";
 
-import { AIRTABLE_TABLES, listAirtableRecords, optNumeric, str } from "./airtable.server";
+import { AIRTABLE_TABLES, listAirtableRecords, str } from "./airtable.server";
+import { parseStorePoints } from "./store-pricing";
 
 const linkIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -88,8 +89,8 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
       nameAr,
       descriptionEn: str(row.fields["Description En"]) || str(row.fields["Description EN"]),
       descriptionAr: str(row.fields["Description AR"]),
-      requiredPoints: optNumeric(row.fields["Required Points"]),
-      discountPoints: optNumeric(row.fields["Discount Points"]),
+      requiredPoints: parseStorePoints(row.fields["Required Points"]),
+      discountPoints: parseStorePoints(row.fields["Discount Points"]),
       imageUrl: firstImageUrl(row.fields["Product Image"]),
     };
 
