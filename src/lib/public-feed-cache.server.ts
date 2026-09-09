@@ -303,7 +303,11 @@ async function servePublicFeed<T>(
       }
 
       if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
-      throw new FeedUnavailableError(`feed ${feed} unavailable (stale fresh window)`);
+      return serveStalePlayersOrFail<T>(
+        feed,
+        cacheKey,
+        `feed ${feed} unavailable (stale fresh window)`,
+      );
     }
 
     if (status === "claimed") {
@@ -315,7 +319,11 @@ async function servePublicFeed<T>(
         REFRESH_DEADLINE_MS,
       );
       if (budget <= 0) {
-        throw new FeedUnavailableError(`no refresh time remaining for ${feed}`);
+        return serveStalePlayersOrFail<T>(
+          feed,
+          cacheKey,
+          `no refresh time remaining for ${feed}`,
+        );
       }
       return runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
     }
@@ -326,7 +334,12 @@ async function servePublicFeed<T>(
     }
 
     // busy (rechecks exhausted), backoff, cooldown, budget_exhausted, disabled
-    throw new FeedUnavailableError(`feed ${feed} unavailable (${status || "unknown"})`);
+    return serveStalePlayersOrFail<T>(
+      feed,
+      cacheKey,
+      `feed ${feed} unavailable (${status || "unknown"})`,
+    );
+
   }
 }
 
