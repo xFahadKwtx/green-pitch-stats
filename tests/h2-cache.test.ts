@@ -566,16 +566,15 @@ describe("cache serving", () => {
     expect(world.airtableRequests.length).toBe(baseline + 1);
   });
 
-  test("19. expired data is never served", async () => {
+  test("19. expired data with budget exhausted serves stale records payload", async () => {
     seedFullBase();
-    // records has no stale fallback, so expiry must surface as a failure.
-    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const first = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
     world.advance(FEED_TTL_SECONDS * 1000 + 1);
     world.postgresDown = false;
     world.control.dayUsed = DAY_LIMIT; // budget exhausted after expiry
-    await expect(
-      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
-    ).rejects.toThrow(FeedUnavailableError);
+    // records now has stale fallback: the last known non-empty payload is served.
+    const served = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    expect(served).toEqual(first);
   });
 
   test("18. fresh cached data still served during an Airtable outage", async () => {
