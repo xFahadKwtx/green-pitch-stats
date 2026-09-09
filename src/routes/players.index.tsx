@@ -67,6 +67,18 @@ function playerMatchesCategory(p: Player, cat: Position): boolean {
   return CATEGORY_TOKENS[cat].some((token) => tokens.includes(token));
 }
 
+/** Unique recognized categories in position order, using the filter's rules. */
+function playerCategories(p: Player): Position[] {
+  const categories: Position[] = [];
+  for (const token of normalizePositions(p.positions)) {
+    const category = (Object.keys(CATEGORY_TOKENS) as Position[]).find((cat) =>
+      CATEGORY_TOKENS[cat].includes(token),
+    );
+    if (category && !categories.includes(category)) categories.push(category);
+  }
+  return categories;
+}
+
 function PlayersPage() {
   const { t, lang } = useI18n();
   const [query, setQuery] = useState("");
@@ -153,9 +165,14 @@ function PlayersPage() {
                     {lang === "ar" ? p.nameAr : p.name}
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">
-                    {p.positions.length > 0
-                      ? p.positions.join(" · ")
-                      : t(`pos.${p.positionGroup}` as TKey)}
+                    {playerCategories(p)
+                      .map((category) =>
+                        // This compact label uses the approved short Arabic name.
+                        lang === "ar" && category === "GK"
+                          ? "حارس"
+                          : t(`pos.${category}` as TKey).toUpperCase(),
+                      )
+                      .join(" • ")}
                   </span>
                 </span>
                 <ChevronRight

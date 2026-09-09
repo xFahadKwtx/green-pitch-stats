@@ -31,6 +31,8 @@ const OUTFIELD_GROUP: Record<string, Position> = {
   CB: "DEF",
   RB: "DEF",
   LB: "DEF",
+  RWB: "DEF",
+  LWB: "DEF",
   DEF: "DEF",
   CDM: "MID",
   CM: "MID",
@@ -39,6 +41,7 @@ const OUTFIELD_GROUP: Record<string, Position> = {
   LM: "MID",
   MID: "MID",
   ST: "FWD",
+  CF: "FWD",
   LW: "FWD",
   RW: "FWD",
   FWD: "FWD",
@@ -146,6 +149,10 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     const positions = selects(record.fields["Position"])
       .map((p) => p.trim().toUpperCase())
       .filter(Boolean);
+    // Match directory separators while preserving the original display entries.
+    const positionTokens = positions
+      .flatMap((p) => p.split(/[•\-/,\s]+/))
+      .filter(Boolean);
 
     const stats: Player["stats"] = {};
     for (const month of months) {
@@ -158,9 +165,9 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
       name: name || nameAr,
       nameAr: nameAr || name,
       positions,
-      positionGroup: groupOf(positions),
-      playsKeeper: positions.includes("GK"),
-      playsOutfield: positions.some((p) => p !== "GK" && OUTFIELD_GROUP[p] !== undefined),
+      positionGroup: groupOf(positionTokens),
+      playsKeeper: positionTokens.includes("GK"),
+      playsOutfield: positionTokens.some((p) => p !== "GK" && OUTFIELD_GROUP[p] !== undefined),
       points: optNumeric(record.fields["Points Balance"]),
       last5Results: parseLast5Results(record.fields["Last 5 Results"]),
       stats,
