@@ -13,7 +13,6 @@ import {
   PUBLIC_ERROR_MESSAGE,
   PUBLIC_ERROR_NAME,
   createPublicError,
-  isPublicError,
 } from "../src/lib/public-error";
 import { withPublicFeedBoundary } from "../src/lib/public-error.server";
 import { FeedErrorNotice } from "../src/components/feed-error";
@@ -159,6 +158,31 @@ describe("M1 — public error boundary", () => {
     }
   });
 
+  test("failed HTTP bodies are never read and HTTP diagnostics contain only safe metadata", async () => {
+    const { listAirtableRecords } = await loadAirtableHelperWithStubbedCoordinator();
+    let reads = 0;
+    fetchResponder = async () => {
+      const response = new Response(TECHNICAL_BODY, { status: 400 });
+      response.json = async () => { reads++; throw new Error(TECHNICAL_BODY); };
+      response.text = async () => { reads++; return TECHNICAL_BODY; };
+      return response;
+    };
+    await expect(withPublicFeedBoundary("players", () => listAirtableRecords("tblTest"))).rejects.toThrow(PUBLIC_ERROR_MESSAGE);
+    expect(reads).toBe(0);
+    const diagnostic = logged[0]![0] as Record<string, unknown>;
+    expect(diagnostic["status"]).toBe(400);
+    expect(diagnostic["source"]).toBe("airtable");
+    for (const secret of SECRETS) expect(JSON.stringify(logged)).not.toContain(secret);
+  });
+
+  test("successful Airtable records remain unchanged through the public boundary", async () => {
+    const { listAirtableRecords } = await loadAirtableHelperWithStubbedCoordinator();
+    const records = [{ id: "recPublic", fields: { Name: "Visible", "Arabic Name": "ظاهر", Points: 20 } }];
+    fetchResponder = httpResponder(200, JSON.stringify({ records }));
+    expect(await withPublicFeedBoundary("players", () => listAirtableRecords("tblTest"))).toEqual(records);
+    expect(logged).toEqual([]);
+  });
+
   test("3. Airtable 429 keeps the typed rate-limit contract and a sanitized public message", async () => {
     const { listAirtableRecords, AirtableRateLimitError } =
       await loadAirtableHelperWithStubbedCoordinator();
@@ -269,8 +293,7 @@ describe("M1 — public error boundary", () => {
     expect(logged.length).toBe(1);
     const args = logged[0] as unknown[];
     expect(args.length).toBe(1);
-    expect(typeof args[0]).toBe("string");
-    const parsed = JSON.parse(args[0] as string) as Record<string, unknown>;
+    const parsed = args[0] as Record<string, unknown>;
     expect(Object.keys(parsed).sort()).toEqual([
       "category",
       "event",
@@ -284,7 +307,7 @@ describe("M1 — public error boundary", () => {
     expect(parsed["status"]).toBe(400);
     expect(typeof parsed["ref"]).toBe("string");
     for (const secret of SECRETS) {
-      expect((args[0] as string).includes(secret)).toBe(false);
+      expect(JSON.stringify(args[0]).includes(secret)).toBe(false);
     }
   });
 
@@ -292,8 +315,8 @@ describe("M1 — public error boundary", () => {
     const a = createPublicError();
     const b = createPublicError();
     expect(a.message).toBe(b.message);
-    expect(isPublicError(a)).toBe(true);
-    expect(isPublicError(new Error("boom"))).toBe(false);
+    expectSafe(a);
+    expectSafe(b);
   });
 });
 

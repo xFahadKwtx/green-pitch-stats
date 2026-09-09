@@ -33,6 +33,10 @@ export function createPublicError(): Error {
     writable: true,
     configurable: true,
   });
+  // Some runtimes attach sourceURL/line/column outside the stack string.
+  for (const key of Object.getOwnPropertyNames(error)) {
+    if (key !== "message" && key !== "name" && key !== "stack") Reflect.deleteProperty(error, key);
+  }
   return error;
 }
 

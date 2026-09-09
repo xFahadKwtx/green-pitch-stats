@@ -13,6 +13,7 @@ import {
   AirtableRateLimitError,
   runAirtablePage,
 } from "./public-feed-cache.server";
+import { logServerError } from "./server-diagnostics.server";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/airtable";
 
@@ -131,14 +132,22 @@ export async function listAirtableRecords(
       `${tableId}:${offset ?? "first"}`,
       async (signal): Promise<AirtableListResponse> => {
         // GET only — this integration is strictly read-only.
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "X-Connection-Api-Key": airtableApiKey,
-          },
-          signal,
-        });
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${lovableApiKey}`,
+              "X-Connection-Api-Key": airtableApiKey,
+            },
+            signal,
+          });
+        } catch (error) {
+          logServerError("airtable", "network", error);
+          throw error;
+        }
+
+        if (!response.ok) logServerError("airtable", "response", undefined, response.status);
 
         if (response.status === 429) {
           throw new AirtableRateLimitError(retryAfterSeconds(response));
@@ -152,11 +161,17 @@ export async function listAirtableRecords(
         let body: unknown;
         try {
           body = await response.json();
-        } catch {
+        } catch (error) {
+          logServerError("airtable", "response-json", error);
           throw new Error("Airtable response was not valid JSON");
         }
         // A malformed 200 fails the entire refresh; never silently empty.
-        return parseListResponse(body);
+        try {
+          return parseListResponse(body);
+        } catch (error) {
+          logServerError("airtable", "response-shape", error);
+          throw error;
+        }
       },
     );
 
