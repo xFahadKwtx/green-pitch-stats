@@ -1357,14 +1357,33 @@ describe("players stale fallback and empty-overwrite protection", () => {
   const playersLoader = () => fetchPlayersFromAirtable();
   const KEY = "production:players";
 
+  /** Website-visible player rows (the mapper skips anything else). */
+  function seedVisiblePlayers(count: number) {
+    world.setTable(AIRTABLE_TABLES.playersDatabase, {
+      behaviour: "ok",
+      records: Array.from({ length: count }, (_, i) => ({
+        id: `recVisiblePlayer${String(i).padStart(6, "0")}`,
+        fields: {
+          "Show On Website": true,
+          "Official Name EN": `Player ${i}`,
+          "Official Name AR": `لاعب ${i}`,
+          Position: ["MID"],
+          "Player ID": `p${i}`,
+        } as Record<string, unknown>,
+      })),
+    });
+  }
+
   /** One successful players refresh, then the freshness window expires. */
   async function warmThenExpire() {
     seedFullBase();
+    seedVisiblePlayers(3);
     const first = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
-    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBe(3);
     world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
     return first;
   }
+
 
   test("41. busy coordinator serves the last known players payload", async () => {
     const first = await warmThenExpire();
