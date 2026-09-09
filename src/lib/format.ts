@@ -70,6 +70,13 @@ export function registrationLink(match: Match, phone: string, lang: Lang) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(lines.join("\n"))}`;
 }
 
+/** Player balances retain quarter points; missing balances keep displaying zero. */
+export const pointsBalance = (v: number | null, lang: Lang) =>
+  (v ?? 0).toLocaleString(localeOf(lang), {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
 export const num = (v: number, lang: Lang) =>
   v.toLocaleString(localeOf(lang), { maximumFractionDigits: 0 });
 

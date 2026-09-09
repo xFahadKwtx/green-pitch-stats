@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
 import { MonthFilter, PageShell, SectionTitle, StatCard } from "@/components/ui-kit";
-import { numOrNA, pctOrNA, ratingOrNA } from "@/lib/format";
+import { numOrNA, pctOrNA, pointsBalance, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
@@ -80,7 +80,7 @@ function PlayerProfile() {
             {t("profile.points")}
           </p>
           <p className="stat-number mt-1 text-4xl text-gold sm:text-5xl">
-            {numOrNA(player.points, lang)}
+            {pointsBalance(player.points, lang)}
           </p>
         </div>
       </header>
