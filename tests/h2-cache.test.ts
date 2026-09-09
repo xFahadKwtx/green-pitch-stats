@@ -566,16 +566,15 @@ describe("cache serving", () => {
     expect(world.airtableRequests.length).toBe(baseline + 1);
   });
 
-  test("19. expired data is never served", async () => {
+  test("19. expired data with budget exhausted serves stale records payload", async () => {
     seedFullBase();
-    // records has no stale fallback, so expiry must surface as a failure.
-    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const first = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
     world.advance(FEED_TTL_SECONDS * 1000 + 1);
     world.postgresDown = false;
     world.control.dayUsed = DAY_LIMIT; // budget exhausted after expiry
-    await expect(
-      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
-    ).rejects.toThrow(FeedUnavailableError);
+    // records now has stale fallback: the last known non-empty payload is served.
+    const served = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    expect(served).toEqual(first);
   });
 
   test("18. fresh cached data still served during an Airtable outage", async () => {
@@ -1425,15 +1424,50 @@ describe("players stale fallback and empty-overwrite protection", () => {
     expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
   });
 
-  test("44. the fallback never applies to other feeds", async () => {
+  test("44. records feed serves its last known non-empty payload during cooldown", async () => {
     seedFullBase();
-    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    const recordsLoader = () => listAll(AIRTABLE_TABLES.records)();
+    const first = (await getCachedPublicFeed("records", recordsLoader)) as unknown[];
+    expect(first.length).toBeGreaterThan(0);
     world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+    const before = world.airtableRequests.length;
+
+    world.control.cooldownUntil = world.now + 60 * 60_000;
+    expect(await getCachedPublicFeed("records", recordsLoader)).toEqual(first);
+    expect(world.airtableRequests.length).toBe(before);
+    expect(world.selectCalls).toBeGreaterThan(0);
+  });
+
+  test("44b. records feed with no cached payload still fails closed", async () => {
+    seedFullBase();
     world.control.cooldownUntil = world.now + 60_000;
     await expect(
       getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
     ).rejects.toThrow(FeedUnavailableError);
-    expect(world.selectCalls).toBe(0);
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("44c. upcoming-games feed serves its last known non-empty payload during cooldown", async () => {
+    seedFullBase();
+    const ugLoader = () => listAll(AIRTABLE_TABLES.upcomingGames)();
+    const first = (await getCachedPublicFeed("upcoming-games", ugLoader)) as unknown[];
+    expect(first.length).toBeGreaterThan(0);
+    world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+    const before = world.airtableRequests.length;
+
+    world.control.cooldownUntil = world.now + 60 * 60_000;
+    expect(await getCachedPublicFeed("upcoming-games", ugLoader)).toEqual(first);
+    expect(world.airtableRequests.length).toBe(before);
+    expect(world.selectCalls).toBeGreaterThan(0);
+  });
+
+  test("44d. upcoming-games feed with no cached payload still fails closed", async () => {
+    seedFullBase();
+    world.control.cooldownUntil = world.now + 60_000;
+    await expect(
+      getCachedPublicFeed("upcoming-games", listAll(AIRTABLE_TABLES.upcomingGames)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
   });
 
   test("45. no cached players payload still fails closed", async () => {

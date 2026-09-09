@@ -231,14 +231,19 @@ async function readStoredArrayPayload(cacheKey: string): Promise<unknown[] | nul
 }
 
 /** Feeds allowed to serve a stale non-empty payload instead of failing. */
-const STALE_FALLBACK_FEEDS: ReadonlySet<FeedName> = new Set<FeedName>(["players", "store"]);
+const STALE_FALLBACK_FEEDS: ReadonlySet<FeedName> = new Set<FeedName>([
+  "players",
+  "store",
+  "records",
+  "upcoming-games",
+]);
 
 /**
  * Fix #1 — stale fallback. When the coordinator cannot run a refresh
  * right now (busy, backoff, cooldown, budget exhausted, disabled, no refresh
- * time left, stale fresh window), the players and store pages serve the last
- * known NON-EMPTY cached payload instead of showing nothing. Other feeds keep
- * their existing fail-closed behaviour.
+ * time left, stale fresh window), every public feed serves the last known
+ * NON-EMPTY cached payload instead of showing nothing. When no non-empty
+ * payload exists the feed still fails closed.
  */
 async function serveStalePlayersOrFail<T>(
   feed: FeedName,
