@@ -568,12 +568,13 @@ describe("cache serving", () => {
 
   test("19. expired data is never served", async () => {
     seedFullBase();
-    await getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store));
+    // records has no stale fallback, so expiry must surface as a failure.
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
     world.advance(FEED_TTL_SECONDS * 1000 + 1);
     world.postgresDown = false;
     world.control.dayUsed = DAY_LIMIT; // budget exhausted after expiry
     await expect(
-      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
     ).rejects.toThrow(FeedUnavailableError);
   });
 
@@ -1485,5 +1486,27 @@ describe("players stale fallback and empty-overwrite protection", () => {
     const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
     expect(served.length).toBe(first.length);
     expect(world.rows.get(KEY)!.freshUntil).toBeGreaterThan(world.now);
+  });
+
+  test("50. the store feed also serves its last known non-empty payload", async () => {
+    seedFullBase();
+    const storeLoader = () => listAll(AIRTABLE_TABLES.store)();
+    const first = (await getCachedPublicFeed("store", storeLoader)) as unknown[];
+    expect(first.length).toBeGreaterThan(0);
+    world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+    const before = world.airtableRequests.length;
+
+    world.control.cooldownUntil = world.now + 60 * 60_000;
+    expect(await getCachedPublicFeed("store", storeLoader)).toEqual(first);
+    expect(world.airtableRequests.length).toBe(before);
+  });
+
+  test("51. the store feed with no cached payload still fails closed", async () => {
+    seedFullBase();
+    world.control.cooldownUntil = world.now + 60_000;
+    await expect(
+      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
   });
 });
