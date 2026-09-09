@@ -1352,3 +1352,119 @@ describe("final review corrections", () => {
     expect(world.rows.get("production:records")!.payload).toBeNull();
   });
 });
+
+describe("players stale fallback and empty-overwrite protection", () => {
+  const playersLoader = () => fetchPlayersFromAirtable();
+  const KEY = "production:players";
+
+  /** One successful players refresh, then the freshness window expires. */
+  async function warmThenExpire() {
+    seedFullBase();
+    const first = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
+    expect(first.length).toBeGreaterThan(0);
+    world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+    return first;
+  }
+
+  test("41. busy coordinator serves the last known players payload", async () => {
+    const first = await warmThenExpire();
+    const before = world.airtableRequests.length;
+    // Another feed owns the single global lease for longer than the rechecks.
+    world.control.leaseToken = "other-token";
+    world.control.leaseFeed = "production:records";
+    world.control.leaseStartedAt = world.now;
+    world.control.leaseExpiresAt = world.now + 10 * LEASE_MS;
+
+    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
+    expect(served).toEqual(first);
+    expect(world.airtableRequests.length).toBe(before);
+    expect(world.selectCalls).toBeGreaterThan(0);
+  });
+
+  test("42. cooldown, backoff and exhausted budget all serve stale players", async () => {
+    const first = await warmThenExpire();
+    const before = world.airtableRequests.length;
+
+    world.control.cooldownUntil = world.now + 60 * 60_000;
+    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+
+    world.control.cooldownUntil = null;
+    world.rows.get(KEY)!.retryAfter = world.now + 60_000;
+    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+
+    world.rows.get(KEY)!.retryAfter = null;
+    world.control.dayUsed = DAY_LIMIT;
+    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+
+    expect(world.airtableRequests.length).toBe(before);
+  });
+
+  test("43. disabled coordinator serves stale players instead of failing", async () => {
+    const first = await warmThenExpire();
+    world.control.enabled = false;
+    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+  });
+
+  test("44. the fallback never applies to other feeds", async () => {
+    seedFullBase();
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+    world.control.cooldownUntil = world.now + 60_000;
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.selectCalls).toBe(0);
+  });
+
+  test("45. no cached players payload still fails closed", async () => {
+    seedFullBase();
+    world.control.cooldownUntil = world.now + 60_000;
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(
+      FeedUnavailableError,
+    );
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("46. an unreadable stale lookup fails closed and leaks nothing", async () => {
+    await warmThenExpire();
+    world.control.cooldownUntil = world.now + 60_000;
+    world.selectFails = true;
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(
+      FeedUnavailableError,
+    );
+  });
+
+  test("47. an empty refresh never overwrites a non-empty players payload", async () => {
+    const first = await warmThenExpire();
+    const finishesBefore = world.rpcCalls.filter((f) => f === "h2_finish_refresh").length;
+    // Every player row disappears from Airtable: the mapper yields [].
+    world.seedTable(AIRTABLE_TABLES.playersDatabase, 0);
+
+    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
+    expect(served).toEqual(first);
+    // The stored payload is untouched and no empty publish happened.
+    expect(world.rows.get(KEY)!.payload).toEqual(first);
+    expect((world.rows.get(KEY)!.payload as unknown[]).length).toBeGreaterThan(0);
+    expect(world.rpcCalls.filter((f) => f === "h2_finish_refresh").length).toBe(
+      finishesBefore,
+    );
+    // The lease is released rather than left dangling.
+    expect(world.control.leaseToken).toBeNull();
+  });
+
+  test("48. an empty players payload is accepted when nothing is cached yet", async () => {
+    seedFullBase();
+    world.seedTable(AIRTABLE_TABLES.playersDatabase, 0);
+    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
+    expect(served).toEqual([]);
+    expect(world.rows.get(KEY)!.payload).toEqual([]);
+    expect(world.rows.get(KEY)!.freshUntil).toBeGreaterThan(world.now);
+  });
+
+  test("49. a non-empty refresh still publishes normally", async () => {
+    const first = await warmThenExpire();
+    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
+    expect(served.length).toBe(first.length);
+    expect(world.rows.get(KEY)!.freshUntil).toBeGreaterThan(world.now);
+  });
+});
