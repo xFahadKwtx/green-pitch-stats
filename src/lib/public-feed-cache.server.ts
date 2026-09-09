@@ -195,16 +195,14 @@ async function rpc(fn: string, args: Json, extraSignal?: AbortSignal): Promise<J
   throw new FeedUnavailableError(`coordinator returned an unexpected result (${fn})`);
 }
 
-/**
- * Players-feed resilience (read-only helper).
- *
- * Reads the stored payload for a cache row with the service credential. This is
- * a SELECT only: it never mutates cache, lease, budget or cooldown state and it
- * never contacts Airtable. Returns the payload only when it is a NON-EMPTY
- * array; anything else (missing row, null, empty, wrong shape, transport or
- * credential problem) yields null so callers keep failing closed.
- */
-async function readStoredArrayPayload(cacheKey: string): Promise<unknown[] | null> {
+interface StoredArrayPayload {
+  payload: unknown[];
+  /** Local monotonic deadline derived from the stored authoritative timestamps. */
+  freshUntil: number;
+}
+
+/** Read-only lookup. Expired entries are retained only for empty-overwrite protection. */
+async function readStoredArrayPayload(cacheKey: string): Promise<StoredArrayPayload | null> {
   const url = process.env["SUPABASE_URL"];
   const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (!url || !key) return null;
@@ -213,47 +211,54 @@ async function readStoredArrayPayload(cacheKey: string): Promise<unknown[] | nul
   if (isLegacyJwtKey(key)) headers["Authorization"] = `Bearer ${key}`;
 
   try {
+    const beforeRead = monotonic();
+    const wallBeforeRead = Date.now();
     const response = await fetch(
       `${url}/rest/v1/airtable_public_cache?cache_key=eq.${encodeURIComponent(cacheKey)}` +
-        `&schema_version=eq.${SCHEMA_VERSION}&select=payload`,
+        `&schema_version=eq.${SCHEMA_VERSION}&select=payload,refresh_started_at,fresh_until`,
       { method: "GET", headers, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) },
     );
     if (!response.ok) return null;
     const body: unknown = await response.json();
     const row = Array.isArray(body) ? body[0] : null;
-    const payload =
-      row && typeof row === "object" ? (row as { payload?: unknown }).payload : null;
-    return Array.isArray(payload) && payload.length > 0 ? payload : null;
+    if (!row || typeof row !== "object") return null;
+    const { payload, refresh_started_at, fresh_until } = row as Json;
+    if (!Array.isArray(payload) || payload.length === 0) return null;
+    const started = typeof refresh_started_at === "string" ? Date.parse(refresh_started_at) : NaN;
+    const until = typeof fresh_until === "string" ? Date.parse(fresh_until) : NaN;
+    // The HTTP server Date prevents a slow local wall clock extending freshness.
+    // Its precision is one second: use the end of that second conservatively.
+    // If the server time is unavailable, the stored fallback fails closed.
+    const serverDate = Date.parse(response.headers.get("date") ?? "");
+    const checkedAt = Math.max(wallBeforeRead, serverDate + 1000);
+    // Cap at 900s from START even if fresh_until is inconsistent. Missing or
+    // invalid timestamps fail closed. Subtract the entire read/body latency.
+    const expires = Math.min(until, started + FEED_TTL_SECONDS * 1000);
+    const freshUntil = Number.isFinite(started) && Number.isFinite(expires) &&
+      Number.isFinite(checkedAt) && started <= checkedAt && until > started
+      ? beforeRead + expires - checkedAt
+      : NaN;
+    return { payload, freshUntil };
   } catch {
     // Upstream bodies/errors are never logged or surfaced.
     return null;
   }
 }
 
-/** Feeds allowed to serve a stale non-empty payload instead of failing. */
-const STALE_FALLBACK_FEEDS: ReadonlySet<FeedName> = new Set<FeedName>([
-  "players",
-  "store",
-  "records",
-  "upcoming-games",
-]);
+function isStoredPayloadFresh(stored: StoredArrayPayload): boolean {
+  return Number.isFinite(stored.freshUntil) && monotonic() < stored.freshUntil;
+}
 
 /**
- * Fix #1 — stale fallback. When the coordinator cannot run a refresh
- * right now (busy, backoff, cooldown, budget exhausted, disabled, no refresh
- * time left, stale fresh window), every public feed serves the last known
- * NON-EMPTY cached payload instead of showing nothing. When no non-empty
- * payload exists the feed still fails closed.
+ * A concurrent refresh may have published since the claim RPC. Serve that
+ * stored payload only while it is still fresh; never extend its hard TTL.
  */
-async function serveStalePlayersOrFail<T>(
-  feed: FeedName,
+async function serveFreshStoredOrFail<T>(
   cacheKey: string,
   reason: string,
 ): Promise<T> {
-  if (STALE_FALLBACK_FEEDS.has(feed)) {
-    const stale = await readStoredArrayPayload(cacheKey);
-    if (stale) return stale as unknown as T;
-  }
+  const stored = await readStoredArrayPayload(cacheKey);
+  if (stored && isStoredPayloadFresh(stored)) return stored.payload as T;
   throw new FeedUnavailableError(reason);
 }
 
@@ -311,8 +316,7 @@ async function servePublicFeed<T>(
       }
 
       if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
-      return serveStalePlayersOrFail<T>(
-        feed,
+      return serveFreshStoredOrFail<T>(
         cacheKey,
         `feed ${feed} unavailable (stale fresh window)`,
       );
@@ -327,8 +331,7 @@ async function servePublicFeed<T>(
         REFRESH_DEADLINE_MS,
       );
       if (budget <= 0) {
-        return serveStalePlayersOrFail<T>(
-          feed,
+        return serveFreshStoredOrFail<T>(
           cacheKey,
           `no refresh time remaining for ${feed}`,
         );
@@ -342,8 +345,7 @@ async function servePublicFeed<T>(
     }
 
     // busy (rechecks exhausted), backoff, cooldown, budget_exhausted, disabled
-    return serveStalePlayersOrFail<T>(
-      feed,
+    return serveFreshStoredOrFail<T>(
       cacheKey,
       `feed ${feed} unavailable (${status || "unknown"})`,
     );
@@ -380,7 +382,7 @@ async function runRefresh<T>(
     (deadlineTimer as unknown as { unref: () => void }).unref();
   }
 
-  const abandon = async (error: unknown): Promise<never> => {
+  const abandon = async (error: unknown, previous: StoredArrayPayload | null): Promise<T> => {
     ctx.failed = true;
     controller.abort();
     const rateLimited = error instanceof AirtableRateLimitError;
@@ -395,6 +397,8 @@ async function runRefresh<T>(
     } catch {
       // Coordinator write failed; the lease expires on its own.
     }
+    // Cleanup can consume the last of a previous Players payload's lifetime.
+    if (previous && isStoredPayloadFresh(previous)) return previous.payload as T;
     throw error instanceof FeedUnavailableError
       ? error
       : new FeedUnavailableError(`refresh failed for ${feed}`);
@@ -412,31 +416,19 @@ async function runRefresh<T>(
   try {
     // Exactly one failure path: any throw below runs h2_fail_refresh once.
     let payload: T;
+    let previousPlayers: StoredArrayPayload | null = null;
     try {
       guard("before load");
       payload = await refreshStore.run(ctx, load);
       guard("before finish");
 
-      // Fix #2 — never replace an existing NON-EMPTY players payload with an
-      // empty array. The empty result is discarded (not published), the lease is
-      // released, and the last known good players payload is served instead. An
-      // empty payload is still accepted when no non-empty payload exists.
+      // Do not replace a non-empty Players cache with an unexpected empty
+      // refresh. Cleanup happens once below; a previous payload may be returned
+      // only if it is still fresh AFTER cleanup. Otherwise fail unavailable.
       if (feed === "players" && Array.isArray(payload) && payload.length === 0) {
-        const previous = await readStoredArrayPayload(cacheKey);
-        if (previous) {
-          ctx.failed = true;
-          controller.abort();
-          try {
-            await rpc("h2_fail_refresh", {
-              p_cache_key: cacheKey,
-              p_lease_token: leaseToken,
-              p_kind: "failure",
-              p_retry_after_seconds: null,
-            });
-          } catch {
-            // Coordinator write failed; the lease expires on its own.
-          }
-          return previous as unknown as T;
+        previousPlayers = await readStoredArrayPayload(cacheKey);
+        if (previousPlayers) {
+          throw new FeedUnavailableError("empty players refresh rejected");
         }
       }
 
@@ -456,7 +448,7 @@ async function runRefresh<T>(
       }
       guard("after finish");
     } catch (error) {
-      return await abandon(error);
+      return await abandon(error, previousPlayers);
     }
 
     return payload;

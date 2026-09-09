@@ -235,10 +235,12 @@ type Scenario = {
   loadValue?: unknown[];
   lookup?: "http" | "json" | "network";
   upstream?: number | "network";
+  expired?: boolean;
 };
 
 async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolean) {
   const savedFetch = globalThis.fetch;
+  const savedDateNow = Date.now;
   const savedConsole = console.error;
   const envNames = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "LOVABLE_API_KEY", "AIRTABLE_API_KEY"];
   const savedEnv = envNames.map(key => process.env[key]);
@@ -249,7 +251,9 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
   const calls: Array<{ operation: string; args?: unknown }> = [];
   const events: string[] = [];
   const logs: unknown[] = [];
-  let now = 0;
+  let now = Date.parse("2026-09-09T12:00:00Z");
+  const started = now - (scenario.expired ? 900_000 : 60_000);
+  Date.now = () => now;
   let innerValue: unknown;
   let loadCalls = 0;
   __testing.setMode("production");
@@ -267,7 +271,10 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
         if (scenario.lookup === "network") throw new Error(SECRET);
         if (scenario.lookup === "http") return new Response(SECRET, { status: 503 });
         if (scenario.lookup === "json") return new Response("not JSON: " + SECRET);
-        return Response.json([{ payload: scenario.stored ?? null }]);
+        return Response.json([{ payload: scenario.stored ?? null,
+          refresh_started_at: new Date(started).toISOString(),
+          fresh_until: new Date(started + 900_000).toISOString(),
+        }], { headers: { date: new Date(now).toUTCString() } });
       }
       const fn = url.pathname.split("/").at(-1)!;
       const args = JSON.parse(String(init?.body));
@@ -313,6 +320,7 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
     return { value, error, calls, loadCalls, events, logs };
   } finally {
     globalThis.fetch = savedFetch;
+    Date.now = savedDateNow;
     console.error = savedConsole;
     __testing.resetSleep();
     __testing.resetMonotonic();
@@ -325,7 +333,7 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
 }
 
 for (const feed of FEEDS) {
-  test(`current H2 ${feed}: fresh, refreshed and every fallback branch have identical payloads and calls`, async () => {
+  test(`current H2 ${feed}: fresh, refreshed and still-fresh fallback preserve M1 payloads and calls`, async () => {
     const stored = [{ id: `${feed}-cached`, nameEn: "Visible", nameAr: "ظاهر", nested: { value: 12 } }];
     for (const status of ["fresh", "claimed", "busy", "backoff", "cooldown", "budget_exhausted", "disabled", "stale-window", "no-time", "unknown-status"]) {
       const scenario = { status, stored };
@@ -342,6 +350,22 @@ for (const feed of FEEDS) {
         expect(after.loadCalls).toBe(0);
         expect(after.calls.some(c => c.operation === "airtable" || c.operation === "h2_take_page_permit")).toBe(false);
       }
+    }
+  });
+
+  test(`hard expiry ${feed}: every expired fallback rejects before M1 sanitization`, async () => {
+    for (const status of ["busy", "backoff", "cooldown", "budget_exhausted", "disabled", "stale-window", "no-time", "unknown-status"]) {
+      const scenario = { status, stored: [{ id: SECRET, nameEn: "Hidden", nameAr: "مخفي", balance: 100 }], expired: true };
+      const before = await exerciseCache(feed, scenario, false);
+      const after = await exerciseCache(feed, scenario, true);
+      expect(before.error).toBeInstanceOf(Error);
+      expect(after.value).toBeUndefined();
+      expect((after.error as Error).message).toBe(PUBLIC_ERROR_MESSAGE);
+      expect((after.error as Error).stack).toBe("");
+      expect(after.calls).toEqual(before.calls);
+      expect(after.loadCalls).toBe(0);
+      expect(after.calls.some(c => c.operation === "airtable" || c.operation === "h2_take_page_permit")).toBe(false);
+      expect(JSON.stringify(after.logs)).not.toContain(SECRET);
     }
   });
 
@@ -383,6 +407,21 @@ test("current H2 Players empty-refresh protection remains intact without changin
       expect(after.logs).toEqual([]);
     }
   }
+});
+
+test("expired Players empty-refresh protection fails after exactly one cleanup and is sanitized by M1", async () => {
+  const scenario = { status: "claimed", loadValue: [], stored: [{ id: SECRET }], expired: true };
+  const before = await exerciseCache("players", scenario, false);
+  const after = await exerciseCache("players", scenario, true);
+  expect(before.error).toBeInstanceOf(Error);
+  expect(after.value).toBeUndefined();
+  expect((after.error as Error).message).toBe(PUBLIC_ERROR_MESSAGE);
+  expect((after.error as Error).stack).toBe("");
+  expect(after.calls).toEqual(before.calls);
+  expect(after.calls.map(c => c.operation)).toEqual(["h2_get_or_claim", "select", "h2_fail_refresh"]);
+  expect(after.calls.at(-1)!.args).toMatchObject({ p_kind: "failure", p_retry_after_seconds: null });
+  expect(after.events).toEqual(["cleanup", "public-error"]);
+  expect(JSON.stringify(after.logs)).not.toContain(SECRET);
 });
 
 test("actual Airtable 429 reaches H2 rate-limit cleanup before public sanitization; other failures also preserve calls", async () => {

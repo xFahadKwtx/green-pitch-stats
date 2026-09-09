@@ -122,9 +122,13 @@ class FakeWorld {
   postgresDown = false;
   /** Extra real latency injected into permit RPCs (window-expiry testing). */
   slowPermitMs = 0;
-  /** Read-only stale-payload SELECTs issued by the players fallback. */
+  /** Read-only stored-payload SELECTs issued by the freshness fallback. */
   selectCalls = 0;
   selectFails = false;
+  selectAdvanceMs = 0;
+  selectBodyAdvanceMs = 0;
+  storedTimestamps: { refresh_started_at: unknown; fresh_until: unknown } | null = null;
+  omitServerDate = false;
 
   /** Fake-clock time consumed INSIDE an RPC round trip, per rpc name. */
   rpcAdvanceMs: Record<string, number> = {};
@@ -435,6 +439,7 @@ class FakeWorld {
 
 let world: FakeWorld;
 const realFetch = globalThis.fetch;
+const realDateNow = Date.now;
 
 function installFetch() {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
@@ -447,20 +452,31 @@ function installFetch() {
     const url = new URL(raw);
 
     if (url.host === "coordinator.test" && url.pathname.endsWith("/airtable_public_cache")) {
-      // Read-only stale lookup used by the players fallback.
+      // Read-only lookup includes authoritative row timestamps and server time.
       const headers = new Headers(init?.headers);
       expect(headers.get("apikey")).toBeTruthy();
       expect(String(init?.method ?? "GET").toUpperCase()).toBe("GET");
+      expect(url.searchParams.get("select")).toBe("payload,refresh_started_at,fresh_until");
       world.selectCalls += 1;
       if (world.selectFails) return new Response("{}", { status: 500 });
       const key = (url.searchParams.get("cache_key") ?? "").replace(/^eq\./, "");
       const row = world.rows.get(key);
       const body =
-        row && row.schemaVersion === 1 ? [{ payload: row.payload ?? null }] : [];
-      return new Response(JSON.stringify(body), {
+        row && row.schemaVersion === 1 ? [{ payload: row.payload ?? null,
+          ...(world.storedTimestamps ?? {
+            refresh_started_at: row.refreshStartedAt === null ? null : new Date(row.refreshStartedAt).toISOString(),
+            fresh_until: row.freshUntil === null ? null : new Date(row.freshUntil).toISOString(),
+          }),
+        }] : [];
+      const serverDate = new Date(world.now).toUTCString();
+      world.advance(world.selectAdvanceMs);
+      const response = new Response(JSON.stringify(body), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(world.omitServerDate ? {} : { date: serverDate }) },
       });
+      const json = response.json.bind(response);
+      response.json = async () => { world.advance(world.selectBodyAdvanceMs); return json(); };
+      return response;
     }
 
     if (url.host === "coordinator.test") {
@@ -506,10 +522,12 @@ beforeEach(() => {
     world.advance(ms);
   });
   __testing.setMonotonic(() => world.now);
+  Date.now = () => world.now;
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
+  Date.now = realDateNow;
   __testing.resetSleep();
   __testing.resetMonotonic();
   __testing.setMode(undefined);
@@ -535,6 +553,163 @@ const listAll = (...tableIds: string[]) =>
     for (const id of tableIds) out.push(await listAirtableRecords(id));
     return out;
   };
+
+describe("strict 900-second freshness correction", () => {
+  const feeds = ["players", "records", "store", "upcoming-games"] as const;
+  const statuses = ["busy", "backoff", "cooldown", "budget_exhausted", "disabled", "unknown",
+    "stale-window", "no-time"] as const;
+
+  function seedCache(feed: typeof feeds[number], age: number) {
+    const row = world.rows.get(`production:${feed}`)!;
+    Object.assign(row, {
+      payload: [{ id: "previously-public-id", nameEn: "Later hidden", nameAr: "مخفي الآن",
+        balance: 900, price: 100, holderNameEn: "Later hidden", game: "old listing" }],
+      refreshStartedAt: world.now - age,
+      freshUntil: world.now - age + 900_000,
+    });
+    return row;
+  }
+
+  function forceClaimStatus(status: typeof statuses[number]) {
+    const original = world.rpc.bind(world);
+    world.rpc = (fn, args) => {
+      if (fn !== "h2_get_or_claim") return original(fn, args);
+      world.rpcCalls.push(fn);
+      if (status === "stale-window") return { status: "fresh", fresh_for_ms: 0 };
+      if (status === "no-time") return { status: "claimed", lease_token: "lease", refresh_deadline_ms: 0 };
+      return { status };
+    };
+  }
+
+  const mustNotLoad = async () => { throw new Error("loader must not run"); };
+
+  for (const feed of feeds) {
+    test(`${feed}: fresh during outage at 899.999s, unavailable at 900s and subsequent backoff`, async () => {
+      const row = seedCache(feed, 899_999);
+      world.seedTable(AIRTABLE_TABLES.records, 1, { behaviour: "500" });
+      const loader = listAll(AIRTABLE_TABLES.records);
+      expect(await getCachedPublicFeed(feed, loader)).toEqual(row.payload);
+      expect(world.airtableRequests).toEqual([]);
+      world.advance(1);
+      await expect(getCachedPublicFeed(feed, loader)).rejects.toThrow(FeedUnavailableError);
+      expect(world.airtableRequests.length).toBe(1);
+      const calls = [...world.rpcCalls];
+      await expect(getCachedPublicFeed(feed, loader)).rejects.toThrow(FeedUnavailableError);
+      expect(world.airtableRequests.length).toBe(1);
+      expect(world.rpcCalls).toEqual([...calls, "h2_get_or_claim"]);
+      expect(world.control.leaseToken).toBeNull();
+    });
+
+    for (const status of statuses) {
+      test(`${feed}: ${status} rejects an expired non-empty stored response without upstream work`, async () => {
+        seedCache(feed, 30 * 24 * 60 * 60_000);
+        forceClaimStatus(status);
+        const controlBefore = structuredClone(world.control);
+        await expect(getCachedPublicFeed(feed, mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+        expect(world.selectCalls).toBe(1);
+        expect(world.airtableRequests).toEqual([]);
+        expect(world.rpcCalls).toEqual(Array(status === "busy" || status === "stale-window" ? 5 : 1).fill("h2_get_or_claim"));
+        expect(world.control).toEqual(controlBefore);
+      });
+
+      test(`${feed}: ${status} can serve a still-fresh concurrently published response`, async () => {
+        const row = seedCache(feed, 60_000);
+        forceClaimStatus(status);
+        const controlBefore = structuredClone(world.control);
+        expect(await getCachedPublicFeed(feed, mustNotLoad)).toEqual(row.payload);
+        expect(world.selectCalls).toBe(1);
+        expect(world.airtableRequests).toEqual([]);
+        expect(world.control).toEqual(controlBefore);
+      });
+    }
+
+    test(`${feed}: stored fallback rejects exactly at 900 seconds`, async () => {
+      seedCache(feed, 900_000);
+      forceClaimStatus("cooldown");
+      await expect(getCachedPublicFeed(feed, mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+      expect(world.airtableRequests).toEqual([]);
+    });
+  }
+
+  for (const stage of ["selectAdvanceMs", "selectBodyAdvanceMs"] as const) {
+    test(`stored fallback cannot expire during ${stage} and still be returned`, async () => {
+      seedCache("players", 898_000);
+      forceClaimStatus("cooldown");
+      world[stage] = 2_000;
+      await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+      expect(world.airtableRequests).toEqual([]);
+    });
+  }
+
+  test("stored fallback never trusts fresh_until beyond 900s from refresh START", async () => {
+    const row = seedCache("players", 900_000);
+    row.freshUntil = world.now + 900_000;
+    forceClaimStatus("cooldown");
+    await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+  });
+
+  test("stored fallback obeys an earlier fresh_until", async () => {
+    const row = seedCache("players", 60_000);
+    row.freshUntil = world.now;
+    forceClaimStatus("cooldown");
+    await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+  });
+
+  for (const timestamps of [
+    { refresh_started_at: null, fresh_until: null },
+    { refresh_started_at: "invalid", fresh_until: "invalid" },
+    { refresh_started_at: 123, fresh_until: 456 },
+    { refresh_started_at: "2026-09-08T13:00:00Z", fresh_until: "2026-09-08T13:15:00Z" },
+    { refresh_started_at: "2026-09-08T12:00:00Z", fresh_until: "2026-09-08T11:00:00Z" },
+  ]) {
+    test(`stored fallback rejects missing or inconsistent timestamps: ${JSON.stringify(timestamps)}`, async () => {
+      seedCache("players", 60_000);
+      world.storedTimestamps = timestamps;
+      forceClaimStatus("cooldown");
+      await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+    });
+  }
+
+  test("a slow application wall clock cannot revive an expired stored payload", async () => {
+    seedCache("players", 900_000);
+    Date.now = () => world.now - 300_000;
+    forceClaimStatus("cooldown");
+    await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+  });
+
+  test("missing server Date fails closed for stored fallback", async () => {
+    seedCache("players", 60_000);
+    world.omitServerDate = true;
+    forceClaimStatus("cooldown");
+    await expect(getCachedPublicFeed("players", mustNotLoad)).rejects.toThrow(FeedUnavailableError);
+  });
+
+  for (const cleanup of ["fresh", "expires", "fails"] as const) {
+    test(`Players empty-refresh protection: previous payload ${cleanup} during cleanup`, async () => {
+      // Simulate a stored response becoming fresh after the claim, before lookup.
+      const row = seedCache("players", 900_000);
+      const previous = structuredClone(row.payload);
+      world.rpcAdvanceMs.h2_fail_refresh = cleanup === "expires" ? 2_000 : 0;
+      const original = world.rpc.bind(world);
+      if (cleanup === "fails") world.rpc = (fn, args) => {
+        if (fn === "h2_fail_refresh") { world.rpcCalls.push(fn); throw new Error("DB unavailable"); }
+        return original(fn, args);
+      };
+      const run = getCachedPublicFeed("players", async () => {
+        row.refreshStartedAt = world.now - (cleanup === "expires" ? 898_000 : 60_000);
+        row.freshUntil = row.refreshStartedAt + 900_000;
+        return [];
+      });
+      if (cleanup === "expires") await expect(run).rejects.toThrow(FeedUnavailableError);
+      else expect(await run).toEqual(previous);
+      expect(row.payload).toEqual(previous);
+      expect(world.rpcCalls).toEqual(["h2_get_or_claim", "h2_fail_refresh"]);
+      expect(world.selectCalls).toBe(1);
+      expect(world.airtableRequests).toEqual([]);
+      if (cleanup !== "fails") expect(world.control.leaseToken).toBeNull();
+    });
+  }
+});
 
 describe("cache serving", () => {
   test("1. fresh cache hit performs zero Airtable requests", async () => {
@@ -566,15 +741,14 @@ describe("cache serving", () => {
     expect(world.airtableRequests.length).toBe(baseline + 1);
   });
 
-  test("19. expired data with budget exhausted serves stale records payload", async () => {
+  test("19. expired data with budget exhausted is rejected", async () => {
     seedFullBase();
     const first = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
     world.advance(FEED_TTL_SECONDS * 1000 + 1);
     world.postgresDown = false;
     world.control.dayUsed = DAY_LIMIT; // budget exhausted after expiry
-    // records now has stale fallback: the last known non-empty payload is served.
-    const served = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
-    expect(served).toEqual(first);
+    await expect(getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records))).rejects.toThrow(FeedUnavailableError);
+    expect(world.rows.get("production:records")!.payload).toEqual(first);
   });
 
   test("18. fresh cached data still served during an Airtable outage", async () => {
@@ -1353,7 +1527,7 @@ describe("final review corrections", () => {
   });
 });
 
-describe("players stale fallback and empty-overwrite protection", () => {
+describe("hard-expiry fallback and Players empty-overwrite protection", () => {
   const playersLoader = () => fetchPlayersFromAirtable();
   const KEY = "production:players";
 
@@ -1385,7 +1559,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
   }
 
 
-  test("41. busy coordinator serves the last known players payload", async () => {
+  test("41. busy coordinator rejects expired players after bounded rechecks", async () => {
     const first = await warmThenExpire();
     const before = world.airtableRequests.length;
     // Another feed owns the single global lease for longer than the rechecks.
@@ -1394,37 +1568,37 @@ describe("players stale fallback and empty-overwrite protection", () => {
     world.control.leaseStartedAt = world.now;
     world.control.leaseExpiresAt = world.now + 10 * LEASE_MS;
 
-    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
-    expect(served).toEqual(first);
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
+    expect(world.rows.get(KEY)!.payload).toEqual(first);
     expect(world.airtableRequests.length).toBe(before);
     expect(world.selectCalls).toBeGreaterThan(0);
   });
 
-  test("42. cooldown, backoff and exhausted budget all serve stale players", async () => {
+  test("42. cooldown, backoff and exhausted budget all reject expired players", async () => {
     const first = await warmThenExpire();
     const before = world.airtableRequests.length;
 
     world.control.cooldownUntil = world.now + 60 * 60_000;
-    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
 
     world.control.cooldownUntil = null;
     world.rows.get(KEY)!.retryAfter = world.now + 60_000;
-    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
 
     world.rows.get(KEY)!.retryAfter = null;
     world.control.dayUsed = DAY_LIMIT;
-    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
 
     expect(world.airtableRequests.length).toBe(before);
   });
 
-  test("43. disabled coordinator serves stale players instead of failing", async () => {
+  test("43. disabled coordinator rejects expired players", async () => {
     const first = await warmThenExpire();
     world.control.enabled = false;
-    expect(await getCachedPublicFeed("players", playersLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
   });
 
-  test("44. records feed serves its last known non-empty payload during cooldown", async () => {
+  test("44. records feed rejects expired payload during cooldown", async () => {
     seedFullBase();
     const recordsLoader = () => listAll(AIRTABLE_TABLES.records)();
     const first = (await getCachedPublicFeed("records", recordsLoader)) as unknown[];
@@ -1433,7 +1607,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
     const before = world.airtableRequests.length;
 
     world.control.cooldownUntil = world.now + 60 * 60_000;
-    expect(await getCachedPublicFeed("records", recordsLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("records", recordsLoader)).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(before);
     expect(world.selectCalls).toBeGreaterThan(0);
   });
@@ -1447,7 +1621,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
     expect(world.airtableRequests.length).toBe(0);
   });
 
-  test("44c. upcoming-games feed serves its last known non-empty payload during cooldown", async () => {
+  test("44c. upcoming-games feed rejects expired payload during cooldown", async () => {
     seedFullBase();
     const ugLoader = () => listAll(AIRTABLE_TABLES.upcomingGames)();
     const first = (await getCachedPublicFeed("upcoming-games", ugLoader)) as unknown[];
@@ -1456,7 +1630,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
     const before = world.airtableRequests.length;
 
     world.control.cooldownUntil = world.now + 60 * 60_000;
-    expect(await getCachedPublicFeed("upcoming-games", ugLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("upcoming-games", ugLoader)).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(before);
     expect(world.selectCalls).toBeGreaterThan(0);
   });
@@ -1488,14 +1662,15 @@ describe("players stale fallback and empty-overwrite protection", () => {
     );
   });
 
-  test("47. an empty refresh never overwrites a non-empty players payload", async () => {
+  test("47. an empty refresh neither overwrites nor returns an expired players payload", async () => {
     const first = await warmThenExpire();
     const finishesBefore = world.rpcCalls.filter((f) => f === "h2_finish_refresh").length;
     // Every player row disappears from Airtable: the mapper yields [].
     world.seedTable(AIRTABLE_TABLES.playersDatabase, 0);
 
-    const served = (await getCachedPublicFeed("players", playersLoader)) as unknown[];
-    expect(served).toEqual(first);
+    const failuresBefore = world.rpcCalls.filter((f) => f === "h2_fail_refresh").length;
+    await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
+    expect(world.rpcCalls.filter((f) => f === "h2_fail_refresh").length).toBe(failuresBefore + 1);
     // The stored payload is untouched and no empty publish happened.
     expect(world.rows.get(KEY)!.payload).toEqual(first);
     expect((world.rows.get(KEY)!.payload as unknown[]).length).toBeGreaterThan(0);
@@ -1522,7 +1697,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
     expect(world.rows.get(KEY)!.freshUntil).toBeGreaterThan(world.now);
   });
 
-  test("50. the store feed also serves its last known non-empty payload", async () => {
+  test("50. the store feed rejects its expired payload", async () => {
     seedFullBase();
     const storeLoader = () => listAll(AIRTABLE_TABLES.store)();
     const first = (await getCachedPublicFeed("store", storeLoader)) as unknown[];
@@ -1531,7 +1706,7 @@ describe("players stale fallback and empty-overwrite protection", () => {
     const before = world.airtableRequests.length;
 
     world.control.cooldownUntil = world.now + 60 * 60_000;
-    expect(await getCachedPublicFeed("store", storeLoader)).toEqual(first);
+    await expect(getCachedPublicFeed("store", storeLoader)).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(before);
   });
 
