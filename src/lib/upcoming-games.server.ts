@@ -5,6 +5,7 @@
  */
 
 import type { Match } from "@/data/types";
+import { compareBookings, normalizeBooking } from "./upcoming-games";
 
 import {
   AIRTABLE_TABLES,
@@ -17,24 +18,19 @@ export async function fetchUpcomingGamesFromAirtable(): Promise<Match[]> {
   const records = await listAirtableRecords(AIRTABLE_TABLES.upcomingGames);
 
   const matches: Match[] = records
-    .filter((record) => Boolean(record.fields["Show On Website"]))
+    .filter((record) => record.fields["Show On Website"] === true)
     .map((record) => {
-      const dateValue = record.fields["Date"];
-      const date =
-        typeof dateValue === "string"
-          ? dateValue.slice(0, 10)
-          : str(dateValue);
-
-      return {
+      return normalizeBooking({
         id: record.id,
-        date,
+        date: str(record.fields["Date"]),
         time: str(record.fields["time"]),
         location: str(record.fields["Location EN"]),
         locationAr: str(record.fields["Location AR"]),
-      };
+      });
     })
-    .filter((match) => match.date !== "")
-    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    .filter((match): match is Match => match !== null)
+    .sort(compareBookings);
 
+  // Keep all validated dates: eligibility is evaluated AFTER H2, on every response.
   return matches;
 }

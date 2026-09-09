@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, MapPin, MessageCircle } from "lucide-react";
+import { useEffect, useState, type MouseEvent } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { upcomingGamesQueryOptions } from "@/lib/upcoming-games-query";
+import { eligibleBookings, isBookingEligible, nextBookingTransition } from "@/lib/upcoming-games";
 
 export const Route = createFileRoute("/upcoming-games")({
   head: () => ({
@@ -39,8 +41,14 @@ export const Route = createFileRoute("/upcoming-games")({
   component: UpcomingGames,
 });
 
-function GameCard({ match }: { match: Match }) {
+function GameCard({ match, onExpired }: { match: Match; onExpired: () => void }) {
   const { t, lang } = useI18n();
+  const guardRegistration = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!isBookingEligible(match, Date.now())) {
+      event.preventDefault();
+      onExpired();
+    }
+  };
   return (
     <article className="glass-card topo-lines flex flex-col gap-5 p-5 transition-transform duration-300 hover:-translate-y-0.5 hover:border-gold/40 sm:p-6">
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
@@ -84,6 +92,8 @@ function GameCard({ match }: { match: Match }) {
 
       <a
         href={registrationLink(match, contactInfo.whatsappNumber, lang)}
+        onClick={guardRegistration}
+        onAuxClick={guardRegistration}
         target="_blank"
         rel="noreferrer"
         className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-gold px-6 text-sm font-bold tracking-wide text-primary-foreground uppercase shadow-gold transition-transform hover:-translate-y-0.5"
@@ -98,6 +108,30 @@ function GameCard({ match }: { match: Match }) {
 function UpcomingGames() {
   const { t } = useI18n();
   const { data: upcomingMatches } = useSuspenseQuery(upcomingGamesQueryOptions);
+  const [, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const recheck = () => {
+      const now = Date.now();
+      setNow(now);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(recheck, nextBookingTransition(upcomingMatches, now) - now);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    recheck();
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [upcomingMatches]);
+
+  const visibleMatches = eligibleBookings(upcomingMatches, Date.now());
 
   return (
     <PageShell>
@@ -106,14 +140,14 @@ function UpcomingGames() {
         title={t("games.title")}
         subtitle={t("games.sub")}
       />
-      {upcomingMatches.length === 0 ? (
+      {visibleMatches.length === 0 ? (
         <p className="glass-card p-8 text-center text-muted-foreground">
           {t("games.empty")}
         </p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {upcomingMatches.map((m) => (
-            <GameCard key={m.id} match={m} />
+          {visibleMatches.map((m) => (
+            <GameCard key={m.id} match={m} onExpired={() => setNow(Date.now())} />
           ))}
         </div>
       )}
