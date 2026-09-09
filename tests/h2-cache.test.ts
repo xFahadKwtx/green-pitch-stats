@@ -568,12 +568,13 @@ describe("cache serving", () => {
 
   test("19. expired data is never served", async () => {
     seedFullBase();
-    await getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store));
+    // records has no stale fallback, so expiry must surface as a failure.
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
     world.advance(FEED_TTL_SECONDS * 1000 + 1);
     world.postgresDown = false;
     world.control.dayUsed = DAY_LIMIT; // budget exhausted after expiry
     await expect(
-      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
     ).rejects.toThrow(FeedUnavailableError);
   });
 
