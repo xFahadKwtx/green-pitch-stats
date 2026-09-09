@@ -196,6 +196,61 @@ async function rpc(fn: string, args: Json, extraSignal?: AbortSignal): Promise<J
 }
 
 /**
+ * Players-feed resilience (read-only helper).
+ *
+ * Reads the stored payload for a cache row with the service credential. This is
+ * a SELECT only: it never mutates cache, lease, budget or cooldown state and it
+ * never contacts Airtable. Returns the payload only when it is a NON-EMPTY
+ * array; anything else (missing row, null, empty, wrong shape, transport or
+ * credential problem) yields null so callers keep failing closed.
+ */
+async function readStoredArrayPayload(cacheKey: string): Promise<unknown[] | null> {
+  const url = process.env["SUPABASE_URL"];
+  const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  if (!url || !key) return null;
+
+  const headers: Record<string, string> = { apikey: key, accept: "application/json" };
+  if (isLegacyJwtKey(key)) headers["Authorization"] = `Bearer ${key}`;
+
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/airtable_public_cache?cache_key=eq.${encodeURIComponent(cacheKey)}` +
+        `&schema_version=eq.${SCHEMA_VERSION}&select=payload`,
+      { method: "GET", headers, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) },
+    );
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const row = Array.isArray(body) ? body[0] : null;
+    const payload =
+      row && typeof row === "object" ? (row as { payload?: unknown }).payload : null;
+    return Array.isArray(payload) && payload.length > 0 ? payload : null;
+  } catch {
+    // Upstream bodies/errors are never logged or surfaced.
+    return null;
+  }
+}
+
+/**
+ * Fix #1 — players stale fallback. When the coordinator cannot run a refresh
+ * right now (busy, backoff, cooldown, budget exhausted, disabled, no refresh
+ * time left, stale fresh window), the players page serves the last known
+ * NON-EMPTY cached payload instead of showing nothing. Other feeds keep their
+ * existing fail-closed behaviour.
+ */
+async function serveStalePlayersOrFail<T>(
+  feed: FeedName,
+  cacheKey: string,
+  reason: string,
+): Promise<T> {
+  if (feed === "players") {
+    const stale = await readStoredArrayPayload(cacheKey);
+    if (stale) return stale as unknown as T;
+  }
+  throw new FeedUnavailableError(reason);
+}
+
+
+/**
  * Serve a public feed from the shared cache, refreshing through the global
  * lease when the cached entry is missing or expired.
  *
@@ -248,7 +303,11 @@ async function servePublicFeed<T>(
       }
 
       if (attempt < BUSY_RECHECK_DELAYS_MS.length) continue;
-      throw new FeedUnavailableError(`feed ${feed} unavailable (stale fresh window)`);
+      return serveStalePlayersOrFail<T>(
+        feed,
+        cacheKey,
+        `feed ${feed} unavailable (stale fresh window)`,
+      );
     }
 
     if (status === "claimed") {
@@ -260,7 +319,11 @@ async function servePublicFeed<T>(
         REFRESH_DEADLINE_MS,
       );
       if (budget <= 0) {
-        throw new FeedUnavailableError(`no refresh time remaining for ${feed}`);
+        return serveStalePlayersOrFail<T>(
+          feed,
+          cacheKey,
+          `no refresh time remaining for ${feed}`,
+        );
       }
       return runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
     }
@@ -271,7 +334,12 @@ async function servePublicFeed<T>(
     }
 
     // busy (rechecks exhausted), backoff, cooldown, budget_exhausted, disabled
-    throw new FeedUnavailableError(`feed ${feed} unavailable (${status || "unknown"})`);
+    return serveStalePlayersOrFail<T>(
+      feed,
+      cacheKey,
+      `feed ${feed} unavailable (${status || "unknown"})`,
+    );
+
   }
 }
 
@@ -341,6 +409,29 @@ async function runRefresh<T>(
       payload = await refreshStore.run(ctx, load);
       guard("before finish");
 
+      // Fix #2 — never replace an existing NON-EMPTY players payload with an
+      // empty array. The empty result is discarded (not published), the lease is
+      // released, and the last known good players payload is served instead. An
+      // empty payload is still accepted when no non-empty payload exists.
+      if (feed === "players" && Array.isArray(payload) && payload.length === 0) {
+        const previous = await readStoredArrayPayload(cacheKey);
+        if (previous) {
+          ctx.failed = true;
+          controller.abort();
+          try {
+            await rpc("h2_fail_refresh", {
+              p_cache_key: cacheKey,
+              p_lease_token: leaseToken,
+              p_kind: "failure",
+              p_retry_after_seconds: null,
+            });
+          } catch {
+            // Coordinator write failed; the lease expires on its own.
+          }
+          return previous as unknown as T;
+        }
+      }
+
       const finished = await rpc(
         "h2_finish_refresh",
         {
@@ -361,6 +452,7 @@ async function runRefresh<T>(
     }
 
     return payload;
+
   } finally {
     clearTimeout(deadlineTimer);
   }
