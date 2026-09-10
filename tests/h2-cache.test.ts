@@ -62,13 +62,39 @@ interface FeedRow {
   lastPageCounts: Record<string, number>;
 }
 
+interface Lease {
+  token: string | null;
+  startedAt: number | null;
+  expiresAt: number | null;
+  lastPageSequence: number;
+}
+
+/** Exactly the eight allowed environment-scoped lease keys. */
+const LEASE_KEYS = [
+  "preview:players",
+  "preview:records",
+  "preview:store",
+  "preview:upcoming-games",
+  "production:players",
+  "production:records",
+  "production:store",
+  "production:upcoming-games",
+] as const;
+
+const KEY_PATTERN = /^(preview|production):(players|records|store|upcoming-games)$/;
+
+function emptyLeases(): Record<string, Lease> {
+  const out: Record<string, Lease> = {};
+  for (const key of LEASE_KEYS) {
+    out[key] = { token: null, startedAt: null, expiresAt: null, lastPageSequence: 0 };
+  }
+  return out;
+}
+
 interface Control {
   enabled: boolean;
-  leaseToken: string | null;
-  leaseFeed: string | null;
-  leaseStartedAt: number | null;
-  leaseExpiresAt: number | null;
-  lastPageSequence: number;
+  /** Independent per-feed refresh leases. */
+  leases: Record<string, Lease>;
   nextRequestAt: number | null;
   cooldownUntil: number | null;
   dayUsed: number;
