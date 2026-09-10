@@ -218,15 +218,29 @@ class FakeWorld {
     };
   }
 
+  /** This feed's own lease slot. Unknown/malformed keys have no slot at all. */
+  lease(key: string): Lease {
+    const lease = this.control.leases[key];
+    if (!lease) throw new Error("missing lease slot");
+    return lease;
+  }
+
+  /** Feed keys whose own lease is currently held. */
+  activeLeaseFeeds(): string[] {
+    return Object.entries(this.control.leases)
+      .filter(([, l]) => l.token !== null && (l.expiresAt ?? 0) > this.now)
+      .map(([key]) => key);
+  }
+
   private ownerInvalid(key: string, token: unknown): boolean {
-    const c = this.control;
+    if (token === null || token === undefined) return true;
+    if (!KEY_PATTERN.test(key)) return true;
+    const lease = this.control.leases[key];
     return (
-      token === null ||
-      token === undefined ||
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
+      !lease ||
+      lease.token === null ||
+      lease.token !== token ||
+      (lease.expiresAt ?? 0) <= this.now
     );
   }
 
