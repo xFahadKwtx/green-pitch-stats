@@ -9,6 +9,7 @@ import { type Player, type Position } from "@/data/types";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { cn } from "@/lib/utils";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/players/")({
   head: () => ({
@@ -24,9 +25,9 @@ export const Route = createFileRoute("/players/")({
         property: "og:description",
         content: "Browse the squad and open any player for detailed match statistics.",
       },
-      { property: "og:url", content: "/players" },
+      { property: "og:url", content: absoluteUrl("/players") },
     ],
-    links: [{ rel: "canonical", href: "/players" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/players") }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

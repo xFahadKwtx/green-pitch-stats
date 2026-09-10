@@ -7,6 +7,7 @@ import { MonthFilter, PageShell, SectionTitle, StatCard } from "@/components/ui-
 import { numOrNA, pctOrNA, pointsBalance, ratingOrNA } from "@/lib/format";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
+import { absoluteUrl } from "@/lib/site";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,7 @@ export const Route = createFileRoute("/players/$playerId")({
     const { player } = loaderData;
     const title = `${player.name} — Player Stats | Al-Mustatil Al-Akhdar`;
     const description = `Match statistics, points balance and monthly performance for ${player.name} at Al-Mustatil Al-Akhdar.`;
-    const url = `/players/${params.playerId}`;
+    const url = absoluteUrl(`/players/${params.playerId}`);
     return {
       meta: [
         { title },

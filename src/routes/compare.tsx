@@ -10,6 +10,7 @@ import { useI18n, type Lang, type TKey } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 import { aggregateKeeper, aggregateOutfield, type Period } from "@/lib/stats";
 import { cn } from "@/lib/utils";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/compare")({
   head: () => ({
@@ -27,9 +28,9 @@ export const Route = createFileRoute("/compare")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { property: "og:url", content: "/compare" },
+      { property: "og:url", content: absoluteUrl("/compare") },
     ],
-    links: [{ rel: "canonical", href: "/compare" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/compare") }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

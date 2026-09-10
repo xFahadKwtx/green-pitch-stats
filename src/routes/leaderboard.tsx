@@ -11,6 +11,7 @@ import { leaderboard, type Category, type LeaderRow } from "@/lib/leaderboard";
 import { playersQueryOptions } from "@/lib/players-query";
 import type { Period } from "@/lib/stats";
 import { cn } from "@/lib/utils";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/leaderboard")({
   head: () => ({
@@ -26,9 +27,9 @@ export const Route = createFileRoute("/leaderboard")({
         property: "og:description",
         content: "See who leads every category this month at Al-Mustatil Al-Akhdar.",
       },
-      { property: "og:url", content: "/leaderboard" },
+      { property: "og:url", content: absoluteUrl("/leaderboard") },
     ],
-    links: [{ rel: "canonical", href: "/leaderboard" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/leaderboard") }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

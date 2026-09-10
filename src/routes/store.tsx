@@ -10,6 +10,7 @@ import { contactInfo } from "@/data/site";
 import { useI18n } from "@/lib/i18n";
 import { storeQueryOptions } from "@/lib/store-query";
 import { getStorePrice, type StorePrice } from "@/lib/store-pricing";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/store")({
   head: () => ({
@@ -26,9 +27,9 @@ export const Route = createFileRoute("/store")({
         content:
           "Browse football rewards from Al-Mustatil Al-Akhdar and request products through WhatsApp.",
       },
-      { property: "og:url", content: "/store" },
+      { property: "og:url", content: absoluteUrl("/store") },
     ],
-    links: [{ rel: "canonical", href: "/store" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/store") }],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(storeQueryOptions),
   errorComponent: () => <FeedErrorNotice />,

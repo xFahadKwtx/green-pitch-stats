@@ -7,6 +7,7 @@ import { Badge, PageShell } from "@/components/ui-kit";
 import { playersQueryOptions } from "@/lib/players-query";
 import { announcement } from "@/data/site";
 import { useI18n, type TKey } from "@/lib/i18n";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -23,9 +24,9 @@ export const Route = createFileRoute("/")({
         content:
           "Register for weekly games on WhatsApp, track your match statistics and climb the monthly leaderboards.",
       },
-      { property: "og:url", content: "/" },
+      { property: "og:url", content: absoluteUrl("/") },
     ],
-    links: [{ rel: "canonical", href: "/" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/") }],
   }),
   component: Home,
 });

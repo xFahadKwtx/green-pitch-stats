@@ -4,6 +4,7 @@ import { Instagram, MessageCircle, Music2, Users } from "lucide-react";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import { contactInfo } from "@/data/site";
 import { useI18n } from "@/lib/i18n";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -19,9 +20,9 @@ export const Route = createFileRoute("/contact")({
         property: "og:description",
         content: "WhatsApp, community group, Instagram and TikTok links.",
       },
-      { property: "og:url", content: "/contact" },
+      { property: "og:url", content: absoluteUrl("/contact") },
     ],
-    links: [{ rel: "canonical", href: "/contact" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/contact") }],
   }),
   component: ContactPage,
 });
