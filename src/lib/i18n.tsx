@@ -12,6 +12,7 @@ export type Lang = "en" | "ar";
 
 const dict = {
   en: {
+    "store.freeze": "Use Freeze 🧊",
     "language.switch": "Switch language",
     "results.last5": "Last 5 results",
     "results.win": "Win",
@@ -162,6 +163,7 @@ const dict = {
     lang: "العربية",
   },
   ar: {
+    "store.freeze": "استخدام Freeze 🧊",
     "language.switch": "تغيير اللغة",
     "results.last5": "نتائج آخر خمس مباريات",
     "results.win": "فوز",

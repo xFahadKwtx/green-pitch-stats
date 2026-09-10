@@ -135,6 +135,7 @@ Add a statistics filter:
 * June 2026
 * July 2026
 * August 2026
+* September 2026
 * All
 
 Every month must have its own statistics.
@@ -156,7 +157,8 @@ For all outfield players show:
 * Successful Dribbles
 * Key Passes
 * Chances Created
-* Average Rating
+* Highest Rating
+* Lowest Rating
 
 Goalkeeper Statistics
 
@@ -166,7 +168,8 @@ For goalkeepers show:
 * Shots Faced
 * Goals Conceded
 * Save Percentage
-* Average Rating
+* Highest Rating
+* Lowest Rating
 
 Design the statistics as premium sports-stat cards.
 
@@ -181,6 +184,7 @@ At the top add a filter:
 * June 2026
 * July 2026
 * August 2026
+* September 2026
 * All
 
 Each month has independent data.
@@ -297,9 +301,9 @@ Clearly highlight the top-ranked players.
 
 Create an editable online-store page.
 
-For now, leave the store empty.
+The Store displays public products and categories from Airtable, using the shared public-feed cache.
 
-Only prepare the layout and structure so products can easily be added later.
+A standalone Freeze action opens a WhatsApp request for manual administrator review. It is not a product, has no price, and does not change balances, bookings or eligibility.
 
 Do not add fake products.
 
@@ -315,9 +319,7 @@ Match MVP Reward
 
 The player who wins Match MVP receives:
 
-The next match only for free.
-
-This reward applies only to the immediately following match.
+A choice between a free match or 8 points.
 
 ⸻
 
@@ -325,7 +327,7 @@ Player of the Month Reward
 
 The Player of the Month receives:
 
-50% discount for one full month.
+A choice between a 50% discount for one month or 70 points.
 
 ⸻
 
@@ -335,7 +337,7 @@ Each position has its own special challenge.
 
 If a player successfully completes the challenge assigned to their position:
 
-50% discount on the next match only.
+1.5 points.
 
 Do not define the individual position challenges yet.
 
@@ -347,7 +349,7 @@ Bring a Player Reward
 
 If a player brings another player:
 
-10% discount.
+0.25 points per player brought, up to four players per match.
 
 ⸻
 
@@ -423,19 +425,17 @@ Make WhatsApp, Instagram and TikTok elements clickable.
 
 Technical Structure
 
-Do NOT connect a database yet.
+Airtable is the source of truth for the public Players, Records, Store and Upcoming Games feeds. Lovable Cloud/Postgres supplies the shared cache and upstream coordination, with a 15-minute hard expiry; it does not replace Airtable as the application data source.
 
-However, build the website architecture so it can easily connect to a database later.
+Feed loaders are separate from UI components. Announcements and reward descriptions remain source-managed content. The homepage match count is the intentional marketing display `99+`, not a live match total.
 
-Keep data separated from UI components so player data, statistics, matches, announcements, leaderboard information, points, rewards and store products can later come from a backend/database without redesigning the website.
-
-For now, use structured mock/sample data where necessary to demonstrate functionality.
+Supported statistics periods are June, July, August and September 2026. October is not supported yet and requires a separate approved change. The intentional June/July estimation policy remains unchanged.
 
 Do not create user accounts or login functionality.
 
 Do not create payment functionality.
 
-Focus on building the complete responsive frontend and preparing it for future database integration.
+Preserve the existing Airtable integrations and shared cache/coordinator when changing the frontend.
 
 Mobile-First & Responsive Design Requirements
 
@@ -465,7 +465,7 @@ Requirements:
 
 * Keep player names, statistics and ranking numbers clearly readable
 
-* Filters such as June 2026 / July 2026 / August 2026 / All should be easy to use on mobile
+* Filters such as June 2026 / July 2026 / August 2026 / September 2026 / All should be easy to use on mobile
 
 * Month filters may become horizontally scrollable tabs on smaller screens
 
@@ -521,13 +521,13 @@ bun run lint
 
 `bun run validate` requires all three checks to pass, stopping on failure:
 
-- `bun run test`: `bun test --isolate --timeout 15000`. Isolation is required because suites mock shared modules and globals. Plain `bun test` is not the supported release command. The current baseline is 855 passing tests and 10,983 assertions.
+- `bun run test`: `bun test --isolate --timeout 15000`. Isolation is required because suites mock shared modules and globals. Plain `bun test` is not the supported release command. The M12 baseline was 855 passing tests and 10,983 assertions; later focused suites extend it.
 - `bun run typecheck`: `tsc --noEmit`, checking the application/configuration included by `tsconfig.json`.
 - `bun run build`: the unchanged `vite build` production build.
 
 The advisory check sends only package names and locked versions to npm's security-advisory service. An advisory or a lookup failure blocks security validation; a failed lookup is unresolved, never a clean result. Review findings and obtain approval for any dependency remediation; do not run automatic fixes.
 
-Lint is temporarily **informational and non-blocking**, outside `validate`. Its existing baseline is 1,035 errors (998 formatting, 36 explicit-any findings in tests, one prefer-const finding) and seven Fast Refresh warnings. Review the output for new issues; this policy does not suppress rules or approve unrelated cleanup.
+Lint is temporarily **informational and non-blocking**, outside `validate`. Its recorded M12 baseline was 1,035 errors (998 formatting, 36 explicit-any findings in tests, one prefer-const finding) and seven Fast Refresh warnings. Review the output for new issues; this policy does not suppress rules or approve unrelated cleanup.
 
 `.github/workflows/validate.yml` runs on pushes to `main` and pull requests targeting `main`, using the pinned runtimes and frozen installation. Tests, typecheck, production build and security validation are mandatory; lint runs informationally. CI uses read-only repository permissions, no production credentials and no publishing step. It does not configure branch protection or prevent publication through Lovable by itself.
 

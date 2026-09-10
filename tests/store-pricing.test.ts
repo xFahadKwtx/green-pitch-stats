@@ -65,7 +65,8 @@ function renderStore() {
 }
 
 function links(html: string) {
-  return [...html.matchAll(/href="([^"]+)"/g)].map(match => new URL(match[1]!.replaceAll("&amp;", "&")));
+  const cards = [...html.matchAll(/<article\b[\s\S]*?<\/article>/g)].map(match => match[0]).join("");
+  return [...cards.matchAll(/href="([^"]+)"/g)].map(match => new URL(match[1]!.replaceAll("&amp;", "&")));
 }
 
 function expectPrice(html: string, numericLabel: string, discounted: boolean) {
@@ -184,7 +185,7 @@ for (const language of ["en", "ar"] as const) {
         const card = html.match(/<article\b[\s\S]*?<\/article>/)![0];
         expect(card).not.toContain(language === "ar" ? "٠ نقاط" : "0 Points");
         expect(links(html)).toEqual([]);
-        expect(html).not.toContain("wa.me");
+        expect(card).not.toContain("wa.me");
         expect(html).toMatch(/<button[^>]*disabled=""/);
         expect(html).not.toContain("line-through");
       });

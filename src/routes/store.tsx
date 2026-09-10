@@ -209,6 +209,16 @@ function StorePage() {
   return (
     <PageShell>
       <PageHeader eyebrow={t("brand")} title={t("store.title")} subtitle={t("store.sub")} />
+      <div className="glass-card mb-6 p-4 sm:p-5">
+        <a
+          href={`https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent("السلام عليكم، أرغب باستخدام ميزة Freeze 🧊")}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-h-10 items-center justify-center rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold"
+        >
+          {t("store.freeze")}
+        </a>
+      </div>
       {categories.length === 0 ? (
         <div className="glass-card topo-lines flex flex-col items-center gap-4 px-6 py-14 text-center">
           <span className="grid h-16 w-16 place-items-center rounded-2xl border border-gold/30 bg-gold/10">

@@ -100,11 +100,11 @@ function Home() {
       <section className="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
         {[
           { value: players?.length ?? 0, label: t("home.stats.players") },
-          { value: 64, label: t("home.stats.matches") },
+          { value: "99+", label: t("home.stats.matches") },
           { value: 15, label: t("home.stats.metrics") },
         ].map((s) => (
           <div key={s.label} className="glass-card p-4 text-center sm:p-6">
-            <p className="stat-number text-3xl text-gold sm:text-5xl">{s.value}</p>
+            <p dir={s.value === "99+" ? "ltr" : undefined} className="stat-number text-3xl text-gold sm:text-5xl">{s.value}</p>
             <p className="mt-2 text-[11px] tracking-[0.12em] text-muted-foreground uppercase sm:text-xs">
               {s.label}
             </p>
