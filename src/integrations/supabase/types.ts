@@ -55,6 +55,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      h2_control_shape_valid: { Args: { c: Json }; Returns: boolean }
       h2_fail_refresh: {
         Args: {
           p_cache_key: string

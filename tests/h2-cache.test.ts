@@ -62,13 +62,39 @@ interface FeedRow {
   lastPageCounts: Record<string, number>;
 }
 
+interface Lease {
+  token: string | null;
+  startedAt: number | null;
+  expiresAt: number | null;
+  lastPageSequence: number;
+}
+
+/** Exactly the eight allowed environment-scoped lease keys. */
+const LEASE_KEYS = [
+  "preview:players",
+  "preview:records",
+  "preview:store",
+  "preview:upcoming-games",
+  "production:players",
+  "production:records",
+  "production:store",
+  "production:upcoming-games",
+] as const;
+
+const KEY_PATTERN = /^(preview|production):(players|records|store|upcoming-games)$/;
+
+function emptyLeases(): Record<string, Lease> {
+  const out: Record<string, Lease> = {};
+  for (const key of LEASE_KEYS) {
+    out[key] = { token: null, startedAt: null, expiresAt: null, lastPageSequence: 0 };
+  }
+  return out;
+}
+
 interface Control {
   enabled: boolean;
-  leaseToken: string | null;
-  leaseFeed: string | null;
-  leaseStartedAt: number | null;
-  leaseExpiresAt: number | null;
-  lastPageSequence: number;
+  /** Independent per-feed refresh leases. */
+  leases: Record<string, Lease>;
   nextRequestAt: number | null;
   cooldownUntil: number | null;
   dayUsed: number;
@@ -102,11 +128,7 @@ class FakeWorld {
   /** Mirrors the seed: the coordinator ships DISABLED until activated. */
   control: Control = {
     enabled: false,
-    leaseToken: null,
-    leaseFeed: null,
-    leaseStartedAt: null,
-    leaseExpiresAt: null,
-    lastPageSequence: 0,
+    leases: emptyLeases(),
     nextRequestAt: null,
     cooldownUntil: null,
     dayUsed: 0,
@@ -196,15 +218,29 @@ class FakeWorld {
     };
   }
 
+  /** This feed's own lease slot. Unknown/malformed keys have no slot at all. */
+  lease(key: string): Lease {
+    const lease = this.control.leases[key];
+    if (!lease) throw new Error("missing lease slot");
+    return lease;
+  }
+
+  /** Feed keys whose own lease is currently held. */
+  activeLeaseFeeds(): string[] {
+    return Object.entries(this.control.leases)
+      .filter(([, l]) => l.token !== null && (l.expiresAt ?? 0) > this.now)
+      .map(([key]) => key);
+  }
+
   private ownerInvalid(key: string, token: unknown): boolean {
-    const c = this.control;
+    if (token === null || token === undefined) return true;
+    if (!KEY_PATTERN.test(key)) return true;
+    const lease = this.control.leases[key];
     return (
-      token === null ||
-      token === undefined ||
-      c.leaseToken === null ||
-      c.leaseToken !== token ||
-      c.leaseFeed !== key ||
-      (c.leaseExpiresAt ?? 0) <= this.now
+      !lease ||
+      lease.token === null ||
+      lease.token !== token ||
+      (lease.expiresAt ?? 0) <= this.now
     );
   }
 
@@ -228,6 +264,8 @@ class FakeWorld {
     if (Number(args["p_schema_version"]) !== 1) {
       throw new Error("unsupported schema version");
     }
+    // Unknown/malformed keys fail closed (the SQL raises on them).
+    if (!KEY_PATTERN.test(key)) throw new Error("invalid cache key");
     const row = this.row(key);
     if (
       row.payload !== null &&
@@ -239,7 +277,9 @@ class FakeWorld {
     }
     if (!this.control.enabled) return { status: "disabled" };
     this.normalizeWindows();
-    if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
+    // Busy only when THIS feed's own lease is held; other feeds never block it.
+    const lease = this.lease(key);
+    if (lease.expiresAt !== null && lease.expiresAt > this.now) {
       return { status: "busy", recheck_after_ms: 1000 };
     }
     if (row.retryAfter !== null && row.retryAfter > this.now) {
@@ -255,17 +295,16 @@ class FakeWorld {
       return { status: "budget_exhausted" };
     }
     const token = `token-${++this.tokenSeq}`;
-    this.control.leaseToken = token;
-    this.control.leaseFeed = key;
-    this.control.leaseStartedAt = this.now;
-    this.control.leaseExpiresAt = this.now + LEASE_MS;
-    this.control.lastPageSequence = 0;
+    lease.token = token;
+    lease.startedAt = this.now;
+    lease.expiresAt = this.now + LEASE_MS;
+    lease.lastPageSequence = 0;
     // The prior payload's refresh_started_at is intentionally untouched.
     return {
       status: "claimed",
       lease_token: token,
       refresh_deadline_ms: DEADLINE_MS,
-      lease_expires_at: this.control.leaseExpiresAt,
+      lease_expires_at: lease.expiresAt,
     };
   }
 
@@ -278,31 +317,35 @@ class FakeWorld {
     if (typeof key !== "string" || token === null || token === undefined) {
       return { status: "invalid" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "invalid" };
     if (!Number.isInteger(sequence) || sequence < 1) return { status: "invalid" };
     if (this.ownerInvalid(key, token)) return { status: "expired" };
     if (!c.enabled) return { status: "disabled" };
-    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+    const lease = this.lease(key);
+    if (lease.startedAt === null || this.now >= lease.startedAt + DEADLINE_MS) {
       return { status: "deadline_exceeded" };
     }
-    if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
+    // Strictly sequential WITHIN this feed's refresh.
+    if (sequence !== lease.lastPageSequence + 1) return { status: "sequence_conflict" };
     // Every grant must charge the CURRENT UTC day/month window.
     this.normalizeWindows();
     if (c.cooldownUntil !== null && c.cooldownUntil > this.now) return { status: "cooldown" };
     if (c.dayUsed >= c.dayLimit || c.monthUsed >= c.monthLimit) {
       return { status: "budget_exhausted" };
     }
+    // Global dispatch spacing, shared by every feed.
     if (c.nextRequestAt !== null && c.nextRequestAt > this.now) {
       return { status: "paced", wait_ms: c.nextRequestAt - this.now };
     }
     c.dayUsed += 1;
     c.monthUsed += 1;
-    c.lastPageSequence = sequence;
+    lease.lastPageSequence = sequence;
     c.nextRequestAt = this.now + PACING_MS;
     return {
       status: "granted",
       usable_for_ms: 1000,
       sequence,
-      refresh_deadline_ms: c.leaseStartedAt + DEADLINE_MS - this.now,
+      refresh_deadline_ms: lease.startedAt + DEADLINE_MS - this.now,
     };
   }
 
@@ -324,25 +367,27 @@ class FakeWorld {
     if (values.some((v) => !Number.isInteger(v) || (v as number) <= 0)) {
       return { status: "rejected", reason: "invalid_page_counts" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "rejected", reason: "invalid_arguments" };
     const row = this.row(key);
     const c = this.control;
     if (this.ownerInvalid(key, token)) return { status: "stale_lease" };
     if (!c.enabled) return { status: "rejected", reason: "disabled" };
-    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+    const lease = this.lease(key);
+    if (lease.startedAt === null || this.now >= lease.startedAt + DEADLINE_MS) {
       return { status: "rejected", reason: "deadline_exceeded" };
     }
     const sum = (values as number[]).reduce((a, b) => a + b, 0);
-    if (sum !== c.lastPageSequence) {
+    if (sum !== lease.lastPageSequence) {
       return { status: "rejected", reason: "page_count_mismatch" };
     }
-    const started = c.leaseStartedAt;
+    const started = lease.startedAt;
     row.payload = payload;
     row.refreshStartedAt = started;
     row.freshUntil = started + FEED_TTL_SECONDS * 1000;
     row.retryAfter = null;
     row.failureCount = 0;
     row.lastPageCounts = counts as Record<string, number>;
-    this.releaseLease();
+    this.releaseLease(key);
     return { status: "published", fresh_until: row.freshUntil };
   }
 
@@ -352,8 +397,9 @@ class FakeWorld {
     if (typeof key !== "string" || token === null || token === undefined) {
       return { status: "ignored", reason: "invalid_arguments" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "ignored", reason: "invalid_arguments" };
     const row = this.row(key);
-    // A stale or expired owner may not alter ANY state.
+    // A stale or expired owner may not alter ANY state, of any feed.
     if (this.ownerInvalid(key, token)) return { status: "ignored", reason: "stale_lease" };
 
     row.failureCount += 1;
@@ -367,17 +413,18 @@ class FakeWorld {
       // Never shorten an existing cooldown.
       this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
     }
-    this.releaseLease();
+    this.releaseLease(key);
     return { status: "recorded", released: true };
   }
 
 
-  private releaseLease() {
-    this.control.leaseToken = null;
-    this.control.leaseFeed = null;
-    this.control.leaseStartedAt = null;
-    this.control.leaseExpiresAt = null;
-    this.control.lastPageSequence = 0;
+  /** Releases ONLY this feed's lease. */
+  private releaseLease(key: string) {
+    const lease = this.lease(key);
+    lease.token = null;
+    lease.startedAt = null;
+    lease.expiresAt = null;
+    lease.lastPageSequence = 0;
   }
 
   /** ---- fake Airtable gateway ---- */
@@ -597,7 +644,7 @@ describe("strict 900-second freshness correction", () => {
       await expect(getCachedPublicFeed(feed, loader)).rejects.toThrow(FeedUnavailableError);
       expect(world.airtableRequests.length).toBe(1);
       expect(world.rpcCalls).toEqual([...calls, "h2_get_or_claim"]);
-      expect(world.control.leaseToken).toBeNull();
+      expect(world.activeLeaseFeeds()).toEqual([]);
     });
 
     for (const status of statuses) {
@@ -706,7 +753,7 @@ describe("strict 900-second freshness correction", () => {
       expect(world.rpcCalls).toEqual(["h2_get_or_claim", "h2_fail_refresh"]);
       expect(world.selectCalls).toBe(1);
       expect(world.airtableRequests).toEqual([]);
-      if (cleanup !== "fails") expect(world.control.leaseToken).toBeNull();
+      if (cleanup !== "fails") expect(world.activeLeaseFeeds()).toEqual([]);
     });
   }
 });
@@ -1029,7 +1076,7 @@ describe("failure handling", () => {
     ).rejects.toThrow();
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   }, 15_000);
 
   test("13. 5xx failure records bounded backoff and releases the lease", async () => {
@@ -1041,7 +1088,7 @@ describe("failure handling", () => {
     const row = world.rows.get("production:records")!;
     expect(row.failureCount).toBe(1);
     expect(row.retryAfter).toBe(world.now + 10_000);
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
 
     // Repeated failures grow the backoff, capped at 300s.
     for (let i = 0; i < 8; i++) {
@@ -1085,7 +1132,7 @@ describe("failure handling", () => {
     expect(row.payload).toBeNull();
     expect(row.failureCount).toBe(1);
     expect(row.retryAfter).toBe(world.now + 10_000);
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
 
@@ -1509,7 +1556,7 @@ describe("final review corrections", () => {
     ).rejects.toThrow(FeedUnavailableError);
     expect(world.rpcCalls.filter((f) => f === "h2_fail_refresh").length).toBe(1);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
   test("40. exceeding the deadline before completion never publishes", async () => {
@@ -1562,11 +1609,13 @@ describe("hard-expiry fallback and Players empty-overwrite protection", () => {
   test("41. busy coordinator rejects expired players after bounded rechecks", async () => {
     const first = await warmThenExpire();
     const before = world.airtableRequests.length;
-    // Another feed owns the single global lease for longer than the rechecks.
-    world.control.leaseToken = "other-token";
-    world.control.leaseFeed = "production:records";
-    world.control.leaseStartedAt = world.now;
-    world.control.leaseExpiresAt = world.now + 10 * LEASE_MS;
+    // Another instance owns the PLAYERS lease for longer than the rechecks.
+    Object.assign(world.lease(KEY), {
+      token: "other-token",
+      startedAt: world.now,
+      expiresAt: world.now + 10 * LEASE_MS,
+      lastPageSequence: 0,
+    });
 
     await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
     expect(world.rows.get(KEY)!.payload).toEqual(first);
@@ -1678,7 +1727,7 @@ describe("hard-expiry fallback and Players empty-overwrite protection", () => {
       finishesBefore,
     );
     // The lease is released rather than left dangling.
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
   test("48. an empty players payload is accepted when nothing is cached yet", async () => {
@@ -1717,5 +1766,331 @@ describe("hard-expiry fallback and Players empty-overwrite protection", () => {
       getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
     ).rejects.toThrow(FeedUnavailableError);
     expect(world.airtableRequests.length).toBe(0);
+  });
+});
+
+describe("per-feed refresh leases with globally shared Airtable limits", () => {
+  const KEY_PLAYERS = "production:players";
+  const KEY_STORE = "production:store";
+  const KEY_RECORDS = "production:records";
+  const KEY_GAMES = "production:upcoming-games";
+
+  /** Another instance holds this feed's own lease. */
+  function holdLease(key: string, token = "held-token", ms = 10 * LEASE_MS) {
+    Object.assign(world.lease(key), {
+      token,
+      startedAt: world.now,
+      expiresAt: world.now + ms,
+      lastPageSequence: 0,
+    });
+  }
+
+  const claim = (key: string) =>
+    world.rpc("h2_get_or_claim", { p_cache_key: key, p_schema_version: 1 }) as Record<
+      string,
+      unknown
+    >;
+
+  test("52. an active players lease does not block a store refresh", async () => {
+    seedFullBase();
+    holdLease(KEY_PLAYERS);
+    const store = (await getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store))) as unknown[];
+    expect(Array.isArray(store)).toBe(true);
+    expect(world.airtableRequests.length).toBeGreaterThan(0);
+    expect(world.rows.get(KEY_STORE)!.payload).not.toBeNull();
+    // The players lease is untouched by the store refresh.
+    expect(world.lease(KEY_PLAYERS).token).toBe("held-token");
+    expect(world.activeLeaseFeeds()).toEqual([KEY_PLAYERS]);
+  });
+
+  test("53. an active store lease does not block records or upcoming games", async () => {
+    seedFullBase();
+    holdLease(KEY_STORE);
+    await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    await getCachedPublicFeed("upcoming-games", listAll(AIRTABLE_TABLES.upcomingGames));
+    expect(world.rows.get(KEY_RECORDS)!.payload).not.toBeNull();
+    expect(world.rows.get(KEY_GAMES)!.payload).not.toBeNull();
+    expect(world.lease(KEY_STORE).token).toBe("held-token");
+  });
+
+  test("54. the same feed cannot hold two active leases", async () => {
+    seedFullBase();
+    const first = claim(KEY_STORE);
+    expect(first["status"]).toBe("claimed");
+    expect(claim(KEY_STORE)["status"]).toBe("busy");
+    // A different feed claims its own lease at the same moment.
+    const other = claim(KEY_PLAYERS);
+    expect(other["status"]).toBe("claimed");
+    expect(other["lease_token"]).not.toBe(first["lease_token"]);
+    expect(world.activeLeaseFeeds().sort()).toEqual([KEY_PLAYERS, KEY_STORE].sort());
+  });
+
+  test("55. malformed or unknown feed keys are rejected everywhere", () => {
+    for (const bad of ["control:base", "staging:store", "production:secrets", "", "production:"]) {
+      expect(() => claim(bad)).toThrow();
+      expect(
+        (world.rpc("h2_take_page_permit", {
+          p_cache_key: bad,
+          p_lease_token: "t",
+          p_sequence: 1,
+        }) as Record<string, unknown>)["status"],
+      ).toBe("invalid");
+      expect(
+        (world.rpc("h2_finish_refresh", {
+          p_cache_key: bad,
+          p_lease_token: "t",
+          p_payload: [],
+          p_page_counts: {},
+        }) as Record<string, unknown>)["status"],
+      ).toBe("rejected");
+      expect(
+        (world.rpc("h2_fail_refresh", {
+          p_cache_key: bad,
+          p_lease_token: "t",
+          p_kind: "failure",
+          p_retry_after_seconds: null,
+        }) as Record<string, unknown>)["status"],
+      ).toBe("ignored");
+    }
+    expect(world.activeLeaseFeeds()).toEqual([]);
+  });
+
+  test("56. a valid token for the wrong feed can neither permit, finish nor fail", () => {
+    seedFullBase();
+    const store = claim(KEY_STORE);
+    const token = store["lease_token"];
+    expect(
+      (world.rpc("h2_take_page_permit", {
+        p_cache_key: KEY_PLAYERS,
+        p_lease_token: token,
+        p_sequence: 1,
+      }) as Record<string, unknown>)["status"],
+    ).toBe("expired");
+    expect(
+      (world.rpc("h2_finish_refresh", {
+        p_cache_key: KEY_PLAYERS,
+        p_lease_token: token,
+        p_payload: [{ id: "hacked" }],
+        p_page_counts: {},
+      }) as Record<string, unknown>)["status"],
+    ).toBe("stale_lease");
+    expect(
+      (world.rpc("h2_fail_refresh", {
+        p_cache_key: KEY_PLAYERS,
+        p_lease_token: token,
+        p_kind: "rate_limited",
+        p_retry_after_seconds: 3600,
+      }) as Record<string, unknown>)["status"],
+    ).toBe("ignored");
+    // Nothing leaked into the players feed, and the store lease still stands.
+    expect(world.rows.get(KEY_PLAYERS)!.payload).toBeNull();
+    expect(world.rows.get(KEY_PLAYERS)!.failureCount).toBe(0);
+    expect(world.control.cooldownUntil).toBeNull();
+    expect(world.lease(KEY_STORE).token).toBe(token);
+
+    // A wrong token on the right feed is equally powerless.
+    expect(
+      (world.rpc("h2_take_page_permit", {
+        p_cache_key: KEY_STORE,
+        p_lease_token: "not-the-token",
+        p_sequence: 1,
+      }) as Record<string, unknown>)["status"],
+    ).toBe("expired");
+  });
+
+  test("57. an expired lease cannot permit, finish or fail as the owner", () => {
+    seedFullBase();
+    const store = claim(KEY_STORE);
+    world.advance(LEASE_MS + 1);
+    const token = store["lease_token"];
+    expect(
+      (world.rpc("h2_take_page_permit", {
+        p_cache_key: KEY_STORE,
+        p_lease_token: token,
+        p_sequence: 1,
+      }) as Record<string, unknown>)["status"],
+    ).toBe("expired");
+    expect(
+      (world.rpc("h2_finish_refresh", {
+        p_cache_key: KEY_STORE,
+        p_lease_token: token,
+        p_payload: [{ id: "late" }],
+        p_page_counts: {},
+      }) as Record<string, unknown>)["status"],
+    ).toBe("stale_lease");
+    expect(
+      (world.rpc("h2_fail_refresh", {
+        p_cache_key: KEY_STORE,
+        p_lease_token: token,
+        p_kind: "failure",
+        p_retry_after_seconds: null,
+      }) as Record<string, unknown>)["status"],
+    ).toBe("ignored");
+    expect(world.rows.get(KEY_STORE)!.payload).toBeNull();
+    expect(world.rows.get(KEY_STORE)!.failureCount).toBe(0);
+  });
+
+  test("58. page sequences are strict and independent per feed", () => {
+    seedFullBase();
+    const store = claim(KEY_STORE);
+    const players = claim(KEY_PLAYERS);
+    const permit = (key: string, token: unknown, sequence: number) =>
+      (world.rpc("h2_take_page_permit", {
+        p_cache_key: key,
+        p_lease_token: token,
+        p_sequence: sequence,
+      }) as Record<string, unknown>)["status"];
+
+    expect(permit(KEY_STORE, store["lease_token"], 1)).toBe("granted");
+    // Skipping or repeating a sequence inside a feed is refused.
+    expect(permit(KEY_STORE, store["lease_token"], 1)).toBe("sequence_conflict");
+    expect(permit(KEY_STORE, store["lease_token"], 3)).toBe("sequence_conflict");
+    // The other feed starts its own sequence at 1, unaffected by store's.
+    world.advance(PACING_MS);
+    expect(permit(KEY_PLAYERS, players["lease_token"], 1)).toBe("granted");
+    expect(world.lease(KEY_STORE).lastPageSequence).toBe(1);
+    expect(world.lease(KEY_PLAYERS).lastPageSequence).toBe(1);
+    // Both pages were charged to the shared budget.
+    expect(world.control.dayUsed).toBe(2);
+    expect(world.control.monthUsed).toBe(2);
+  });
+
+  test("59. two feeds refreshing at once still obey the global dispatch spacing", async () => {
+    seedFullBase();
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, fields: {} }));
+    world.setTable(AIRTABLE_TABLES.records, { behaviour: "ok", records: many(250) });
+    world.setTable(AIRTABLE_TABLES.store, { behaviour: "ok", records: many(250) });
+
+    await Promise.all([
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+    ]);
+
+    const times = world.airtableRequests.map((r) => r.at).sort((a, b) => a - b);
+    expect(times.length).toBe(6);
+    for (let i = 1; i < times.length; i++) {
+      expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(PACING_MS);
+    }
+    // Every page of both feeds was charged to the shared budget exactly once.
+    expect(world.control.dayUsed).toBe(6);
+    expect(world.control.monthUsed).toBe(6);
+  });
+
+  test("60. exhausted shared budgets block every feed independently of leases", async () => {
+    seedFullBase();
+    world.control.dayUsed = DAY_LIMIT;
+    for (const feed of ["players", "store", "records", "upcoming-games"] as const) {
+      await expect(
+        getCachedPublicFeed(feed, listAll(AIRTABLE_TABLES.records)),
+      ).rejects.toThrow(FeedUnavailableError);
+    }
+    expect(world.airtableRequests.length).toBe(0);
+
+    world.control.dayUsed = 0;
+    world.control.monthUsed = MONTH_LIMIT;
+    await expect(
+      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("61. a 429 on one feed blocks all feeds through the shared cooldown", async () => {
+    seedFullBase();
+    world.setTable(AIRTABLE_TABLES.records, { behaviour: "429", records: [], retryAfter: "120" });
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    // Shared Retry-After cooldown on the control row, not on the feed row.
+    expect(world.control.cooldownUntil).toBe(world.now + 120_000);
+    const before = world.airtableRequests.length;
+
+    for (const feed of ["players", "store", "upcoming-games"] as const) {
+      await expect(
+        getCachedPublicFeed(feed, listAll(AIRTABLE_TABLES.store)),
+      ).rejects.toThrow(FeedUnavailableError);
+    }
+    expect(world.airtableRequests.length).toBe(before);
+    expect(world.activeLeaseFeeds()).toEqual([]);
+  });
+
+  test("62. one feed's failure leaves another feed's lease and refresh intact", async () => {
+    seedFullBase();
+    const players = claim(KEY_PLAYERS);
+    world.setTable(AIRTABLE_TABLES.store, { behaviour: "500", records: [] });
+    await expect(
+      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+    ).rejects.toThrow(FeedUnavailableError);
+
+    // Store took its per-feed backoff; players kept its lease untouched.
+    expect(world.rows.get(KEY_STORE)!.failureCount).toBe(1);
+    expect(world.rows.get(KEY_STORE)!.retryAfter).toBe(world.now + 10_000);
+    expect(world.rows.get(KEY_PLAYERS)!.failureCount).toBe(0);
+    expect(world.rows.get(KEY_PLAYERS)!.retryAfter).toBeNull();
+    expect(world.lease(KEY_PLAYERS).token).toBe(players["lease_token"]);
+    // No global cooldown from a plain 5xx.
+    expect(world.control.cooldownUntil).toBeNull();
+  });
+
+  test("63. every feed still rejects a payload older than 900 seconds", async () => {
+    seedFullBase();
+    for (const feed of ["players", "store", "records", "upcoming-games"] as const) {
+      const row = world.rows.get(`production:${feed}`)!;
+      row.payload = [{ id: "old" }];
+      row.refreshStartedAt = world.now - (FEED_TTL_SECONDS * 1000 + 1);
+      row.freshUntil = row.refreshStartedAt + FEED_TTL_SECONDS * 1000;
+      // Its own lease is held elsewhere, so no refresh can complete now.
+      holdLease(`production:${feed}`);
+      await expect(
+        getCachedPublicFeed(feed, listAll(AIRTABLE_TABLES.records)),
+      ).rejects.toThrow(FeedUnavailableError);
+      expect(row.payload).toEqual([{ id: "old" }]);
+    }
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("64. an unavailable coordinator never reaches Airtable for any feed", async () => {
+    seedFullBase();
+    world.postgresDown = true;
+    for (const feed of ["players", "store", "records", "upcoming-games"] as const) {
+      await expect(
+        getCachedPublicFeed(feed, listAll(AIRTABLE_TABLES.records)),
+      ).rejects.toThrow(FeedUnavailableError);
+    }
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+  test("65. original incident: expired store cache while players refreshes", async () => {
+    seedFullBase();
+    // Warm both feeds, then let the store window expire.
+    const storeLoader = listAll(AIRTABLE_TABLES.store);
+    const firstStore = (await getCachedPublicFeed("store", storeLoader)) as unknown[];
+    expect(firstStore.length).toBeGreaterThan(0);
+    world.advance(FEED_TTL_SECONDS * 1000 + 1_000);
+
+    // Players is mid-refresh and holds ITS OWN lease (the incident condition).
+    const players = claim(KEY_PLAYERS);
+    expect(players["status"]).toBe("claimed");
+    const before = world.airtableRequests.length;
+
+    // Store claims its own lease, refreshes through the shared permit gate and
+    // publishes a NEW payload. The expired payload is never served.
+    const refreshed = (await getCachedPublicFeed("store", storeLoader)) as unknown[];
+    expect(refreshed.length).toBeGreaterThan(0);
+    expect(world.airtableRequests.length).toBeGreaterThan(before);
+    const row = world.rows.get(KEY_STORE)!;
+    expect(row.refreshStartedAt).toBeGreaterThan(world.now - FEED_TTL_SECONDS * 1000);
+    expect(row.freshUntil).toBeGreaterThan(world.now);
+    // Players' lease is still its own, untouched.
+    expect(world.lease(KEY_PLAYERS).token).toBe(players["lease_token"]);
+  });
+
+  test("66. a cold store cache whose refresh fails keeps the unavailable state", async () => {
+    seedFullBase();
+    world.setTable(AIRTABLE_TABLES.store, { behaviour: "500", records: [] });
+    await expect(
+      getCachedPublicFeed("store", listAll(AIRTABLE_TABLES.store)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.rows.get(KEY_STORE)!.payload).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 });
