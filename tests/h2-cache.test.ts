@@ -128,11 +128,7 @@ class FakeWorld {
   /** Mirrors the seed: the coordinator ships DISABLED until activated. */
   control: Control = {
     enabled: false,
-    leaseToken: null,
-    leaseFeed: null,
-    leaseStartedAt: null,
-    leaseExpiresAt: null,
-    lastPageSequence: 0,
+    leases: emptyLeases(),
     nextRequestAt: null,
     cooldownUntil: null,
     dayUsed: 0,
