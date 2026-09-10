@@ -367,18 +367,20 @@ class FakeWorld {
     if (values.some((v) => !Number.isInteger(v) || (v as number) <= 0)) {
       return { status: "rejected", reason: "invalid_page_counts" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "rejected", reason: "invalid_arguments" };
     const row = this.row(key);
     const c = this.control;
     if (this.ownerInvalid(key, token)) return { status: "stale_lease" };
     if (!c.enabled) return { status: "rejected", reason: "disabled" };
-    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+    const lease = this.lease(key);
+    if (lease.startedAt === null || this.now >= lease.startedAt + DEADLINE_MS) {
       return { status: "rejected", reason: "deadline_exceeded" };
     }
     const sum = (values as number[]).reduce((a, b) => a + b, 0);
-    if (sum !== c.lastPageSequence) {
+    if (sum !== lease.lastPageSequence) {
       return { status: "rejected", reason: "page_count_mismatch" };
     }
-    const started = c.leaseStartedAt;
+    const started = lease.startedAt;
     row.payload = payload;
     row.refreshStartedAt = started;
     row.freshUntil = started + FEED_TTL_SECONDS * 1000;
