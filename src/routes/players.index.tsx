@@ -123,7 +123,7 @@ function PlayersPage() {
         <div
           role="group"
           aria-label={t("players.search")}
-          className="no-scrollbar flex max-w-full gap-1.5 overflow-x-auto rounded-full border border-border bg-glass p-1"
+          className="no-scrollbar flex max-w-full min-w-0 gap-1.5 overflow-x-auto rounded-full border border-border bg-glass p-1"
         >
           {POSITION_OPTIONS.map((o) => (
             <button
