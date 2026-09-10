@@ -41,8 +41,10 @@ export const RPC_TIMEOUT_MS = 5_000;
 
 /** Bounded busy rechecks: no unbounded per-visitor polling. */
 const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
-const MAX_PACING_WAITS = 8;
+/** Pacing waits are deadline-bounded; the floor bounds coordinator RPC churn. */
+const MIN_PACING_WAIT_MS = 250;
 const MAX_PACING_WAIT_MS = 3_000;
+
 
 export const CONTROL_CACHE_KEY = "control:base";
 
@@ -543,15 +545,23 @@ async function authorizeAndDispatch<T>(
       break;
     }
 
-    if (status === "paced" && attempt < MAX_PACING_WAITS) {
+    if (status === "paced") {
+      // Pacing waits are bounded by the refresh deadline, NOT by an attempt
+      // count: with independent per-feed leases several feeds legitimately
+      // queue behind the same global 2s dispatch spacing, and a fixed attempt
+      // cap made a feed give up while its own deadline was still open.
       const wait = Number(permit["wait_ms"] ?? 1_000);
-      const delay = Math.min(Number.isFinite(wait) ? wait : 1_000, MAX_PACING_WAIT_MS);
+      const delay = Math.min(
+        Math.max(Number.isFinite(wait) ? wait : 1_000, MIN_PACING_WAIT_MS),
+        MAX_PACING_WAIT_MS,
+      );
       if (monotonic() + delay >= ctx.deadlineAt) {
         throw new FeedUnavailableError("refresh deadline exceeded while pacing");
       }
       await sleep(delay);
       continue;
     }
+
 
     throw new FeedUnavailableError(`Airtable page permit denied (${status || "unknown"})`);
   }
