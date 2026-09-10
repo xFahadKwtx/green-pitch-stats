@@ -644,7 +644,7 @@ describe("strict 900-second freshness correction", () => {
       await expect(getCachedPublicFeed(feed, loader)).rejects.toThrow(FeedUnavailableError);
       expect(world.airtableRequests.length).toBe(1);
       expect(world.rpcCalls).toEqual([...calls, "h2_get_or_claim"]);
-      expect(world.control.leaseToken).toBeNull();
+      expect(world.activeLeaseFeeds()).toEqual([]);
     });
 
     for (const status of statuses) {
@@ -753,7 +753,7 @@ describe("strict 900-second freshness correction", () => {
       expect(world.rpcCalls).toEqual(["h2_get_or_claim", "h2_fail_refresh"]);
       expect(world.selectCalls).toBe(1);
       expect(world.airtableRequests).toEqual([]);
-      if (cleanup !== "fails") expect(world.control.leaseToken).toBeNull();
+      if (cleanup !== "fails") expect(world.activeLeaseFeeds()).toEqual([]);
     });
   }
 });
@@ -1076,7 +1076,7 @@ describe("failure handling", () => {
     ).rejects.toThrow();
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   }, 15_000);
 
   test("13. 5xx failure records bounded backoff and releases the lease", async () => {
@@ -1088,7 +1088,7 @@ describe("failure handling", () => {
     const row = world.rows.get("production:records")!;
     expect(row.failureCount).toBe(1);
     expect(row.retryAfter).toBe(world.now + 10_000);
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
 
     // Repeated failures grow the backoff, capped at 300s.
     for (let i = 0; i < 8; i++) {
@@ -1132,7 +1132,7 @@ describe("failure handling", () => {
     expect(row.payload).toBeNull();
     expect(row.failureCount).toBe(1);
     expect(row.retryAfter).toBe(world.now + 10_000);
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
 
@@ -1556,7 +1556,7 @@ describe("final review corrections", () => {
     ).rejects.toThrow(FeedUnavailableError);
     expect(world.rpcCalls.filter((f) => f === "h2_fail_refresh").length).toBe(1);
     expect(world.rows.get("production:records")!.payload).toBeNull();
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
   test("40. exceeding the deadline before completion never publishes", async () => {
@@ -1725,7 +1725,7 @@ describe("hard-expiry fallback and Players empty-overwrite protection", () => {
       finishesBefore,
     );
     // The lease is released rather than left dangling.
-    expect(world.control.leaseToken).toBeNull();
+    expect(world.activeLeaseFeeds()).toEqual([]);
   });
 
   test("48. an empty players payload is accepted when nothing is cached yet", async () => {
