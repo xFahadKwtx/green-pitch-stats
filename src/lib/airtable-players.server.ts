@@ -26,12 +26,49 @@ const MONTH_TABLES: Record<MonthKey, string> = {
   "2026-09": AIRTABLE_TABLES.statsSeptember,
 };
 
+/**
+ * Airtable link field that each monthly table uses to point back at the master
+ * player row. Verified against the live base schema (Metadata API):
+ *   June      tblbfKxLMLBaGFLEX -> "احصائيات اللاعب"
+ *   July      tblH1InnirYscYCWH -> "Players DATABASE"
+ *   August    tbl78eFjDG3gqdPcX -> "Players DATABASE 2"
+ *   September tblMNANv3vwA0Awnf -> "Players DATABASE 2"
+ */
 const MONTH_PLAYER_FIELDS: Record<MonthKey, string> = {
-  "2026-06": "احصائيات اللاعبين",
-  "2026-07": "PLAYERS DATABASE",
-  "2026-08": "PLAYERS DATABASE 2",
-  "2026-09": "PLAYERS DATABASE 2",
+  "2026-06": "احصائيات اللاعب",
+  "2026-07": "Players DATABASE",
+  "2026-08": "Players DATABASE 2",
+  "2026-09": "Players DATABASE 2",
 };
+
+/** Case- and outer-whitespace-insensitive field name comparison. */
+const normalizeFieldName = (name: string): string => name.trim().toLowerCase();
+
+/**
+ * Reads the linked record ids of one monthly ownership field.
+ *
+ * Matching tolerates ONLY letter case and surrounding whitespace on the field
+ * name — never partial or fuzzy names. The value must additionally be an
+ * Airtable link cell (an array), so same-named text fields (August and
+ * September both carry a plain-text "احصائيات اللاعب", September also a text
+ * "Players DATABASE") can never be mistaken for the ownership link.
+ */
+function linkedPlayerIds(
+  fields: Record<string, unknown>,
+  fieldName: string,
+): string[] | null {
+  const direct = fields[fieldName];
+  if (Array.isArray(direct)) return direct.filter((v): v is string => typeof v === "string");
+
+  const wanted = normalizeFieldName(fieldName);
+  for (const [key, value] of Object.entries(fields)) {
+    if (normalizeFieldName(key) !== wanted) continue;
+    if (!Array.isArray(value)) continue;
+    return value.filter((v): v is string => typeof v === "string");
+  }
+  return null;
+}
+
 
 const OUTFIELD_GROUP: Record<string, Position> = {
   CB: "DEF",
@@ -144,12 +181,11 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     for (const record of monthRows[index] ?? []) {
       const stats = monthStats(record.fields);
       if (!hasAnyValue(stats)) continue;
-      const links = record.fields[MONTH_PLAYER_FIELDS[month]];
+      const links = linkedPlayerIds(record.fields, MONTH_PLAYER_FIELDS[month]);
       const owners = new Set(
-        Array.isArray(links)
-          ? links.filter((id): id is string => typeof id === "string" && masterPlayerIds.has(id))
-          : [],
+        (links ?? []).filter((id) => masterPlayerIds.has(id)),
       );
+
       if (owners.size > 1) throw new Error("Ambiguous monthly player ownership");
       const [playerRecordId] = owners;
       if (!playerRecordId || !publicPlayerRecordIds.has(playerRecordId)) continue;

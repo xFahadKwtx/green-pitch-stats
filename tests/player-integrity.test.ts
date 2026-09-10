@@ -9,12 +9,14 @@ import { PUBLIC_ERROR_MESSAGE } from "../src/lib/public-error";
 import { aggregateKeeper, aggregateOutfield } from "../src/lib/stats";
 
 const A = "recAlpha12345678", B = "recBeta123456789", U = "recUnresolved1234";
+/** Exactly the link field names present in the live Airtable base. */
 const months: [MonthKey, string, string][] = [
-  ["2026-06", AIRTABLE_TABLES.statsJune, "احصائيات اللاعبين"],
-  ["2026-07", AIRTABLE_TABLES.statsJuly, "PLAYERS DATABASE"],
-  ["2026-08", AIRTABLE_TABLES.statsAugust, "PLAYERS DATABASE 2"],
-  ["2026-09", AIRTABLE_TABLES.statsSeptember, "PLAYERS DATABASE 2"],
+  ["2026-06", AIRTABLE_TABLES.statsJune, "احصائيات اللاعب"],
+  ["2026-07", AIRTABLE_TABLES.statsJuly, "Players DATABASE"],
+  ["2026-08", AIRTABLE_TABLES.statsAugust, "Players DATABASE 2"],
+  ["2026-09", AIRTABLE_TABLES.statsSeptember, "Players DATABASE 2"],
 ];
+
 const full = {
   "Games played": 3, Goals: 2, Assists: 1, MVP: 2, POTM: true,
   "SHOTS ttl - SOT": "8 - 4", Passes: "9 - 7", Tackles: 6, Clearences: 3,
@@ -163,6 +165,67 @@ test("unique public identifiers and valid complete output are preserved", async 
   for (const [month] of months) expect(result[0]!.stats[month]).toEqual(expectedMonth);
   expect(result[1]!.stats).toEqual({});
 });
+
+test("live ownership field names link every configured month to visible players", async () => {
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[player()]]);
+  for (const [, table, field] of months) tables.set(table, [[row(field)]]);
+  const result = await valid();
+  expect(Object.keys(result[0]!.stats).sort()).toEqual(months.map(([m]) => m).sort());
+});
+
+for (const variant of [
+  (name: string) => name.toUpperCase(),
+  (name: string) => name.toLowerCase(),
+  (name: string) => `  ${name} `,
+]) {
+  test(`ownership field name variant ${JSON.stringify(variant("Players DATABASE 2"))} still links stats`, async () => {
+    tables.set(AIRTABLE_TABLES.playersDatabase, [[player()]]);
+    for (const [, table, field] of months) tables.set(table, [[row(variant(field))]]);
+    const result = await valid();
+    for (const [month] of months) expect(result[0]!.stats[month]).toEqual(expectedMonth);
+  });
+}
+
+test("a same-named plain text field is never used as the ownership link", async () => {
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[player()]]);
+  // August/September carry a text "احصائيات اللاعب" and September a text
+  // "Players DATABASE": text values must never resolve ownership.
+  for (const [, table, field] of months) {
+    tables.set(table, [[{ id: "recMonthly1234567", fields: { [field]: "Alpha", ...full } }]]);
+  }
+  const result = await valid();
+  expect(result[0]!.stats).toEqual({});
+});
+
+test("an unrelated link field never resolves ownership", async () => {
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[player()]]);
+  for (const [, table] of months) {
+    tables.set(table, [[{ id: "recMonthly1234567", fields: { Records: [A], ...full } }]]);
+  }
+  const result = await valid();
+  expect(result[0]!.stats).toEqual({});
+});
+
+test("hidden players stay hidden even when monthly rows link to them", async () => {
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[player(A, "alpha", false)]]);
+  for (const [, table, field] of months) tables.set(table, [[row(field)]]);
+  expect(await valid()).toEqual([]);
+});
+
+test("Points Balance is carried through when Airtable holds a value", async () => {
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[player()]]);
+  const result = await valid();
+  expect(result[0]!.points).toBe(-1.25);
+});
+
+test("a blank Points Balance stays null rather than becoming a number", async () => {
+  const blank = player();
+  delete blank.fields["Points Balance"];
+  tables.set(AIRTABLE_TABLES.playersDatabase, [[blank]]);
+  const result = await valid();
+  expect(result[0]!.points).toBeNull();
+});
+
 
 for (const paginated of [false, true]) {
   for (const ids of [["same", "same"], [" same ", "same"], [B, ""]]) {
