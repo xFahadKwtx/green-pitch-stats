@@ -2,9 +2,11 @@
  * H2 — Airtable request-volume protection and shared coordination.
  *
  * Every public feed response is served from a shared Postgres cache
- * (public.airtable_public_cache). Airtable is only contacted by the single
- * global refresh lease owner, and every individual Airtable pagination page
- * must first obtain a permit from the shared coordinator.
+ * (public.airtable_public_cache). Each feed has its OWN refresh lease, so one
+ * feed's refresh never blocks another's, and Airtable is only contacted by the
+ * current lease owner of that feed. Every individual Airtable pagination page
+ * must still first obtain a permit from the SHARED global coordinator, so the
+ * daily/monthly budgets, dispatch spacing and 429 cooldown remain global.
  *
  * SAFETY / INVARIANTS
  * - No code path may reach Airtable without an active refresh context and a
@@ -264,7 +266,7 @@ async function serveFreshStoredOrFail<T>(
 
 
 /**
- * Serve a public feed from the shared cache, refreshing through the global
+ * Serve a public feed from the shared cache, refreshing through this feed's own
  * lease when the cached entry is missing or expired.
  *
  * Concurrent callers on the SAME instance share one attempt; Postgres remains
