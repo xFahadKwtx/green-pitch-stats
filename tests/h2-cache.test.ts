@@ -1609,11 +1609,13 @@ describe("hard-expiry fallback and Players empty-overwrite protection", () => {
   test("41. busy coordinator rejects expired players after bounded rechecks", async () => {
     const first = await warmThenExpire();
     const before = world.airtableRequests.length;
-    // Another feed owns the single global lease for longer than the rechecks.
-    world.control.leaseToken = "other-token";
-    world.control.leaseFeed = "production:records";
-    world.control.leaseStartedAt = world.now;
-    world.control.leaseExpiresAt = world.now + 10 * LEASE_MS;
+    // Another instance owns the PLAYERS lease for longer than the rechecks.
+    Object.assign(world.lease(KEY), {
+      token: "other-token",
+      startedAt: world.now,
+      expiresAt: world.now + 10 * LEASE_MS,
+      lastPageSequence: 0,
+    });
 
     await expect(getCachedPublicFeed("players", playersLoader)).rejects.toThrow(FeedUnavailableError);
     expect(world.rows.get(KEY)!.payload).toEqual(first);
