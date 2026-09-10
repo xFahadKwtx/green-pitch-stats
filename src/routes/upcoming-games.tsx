@@ -17,6 +17,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { upcomingGamesQueryOptions } from "@/lib/upcoming-games-query";
 import { eligibleBookings, isBookingEligible, nextBookingTransition } from "@/lib/upcoming-games";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/upcoming-games")({
   head: () => ({
@@ -32,9 +33,9 @@ export const Route = createFileRoute("/upcoming-games")({
         property: "og:description",
         content: "See this week's bookings and register on WhatsApp in one tap.",
       },
-      { property: "og:url", content: "/upcoming-games" },
+      { property: "og:url", content: absoluteUrl("/upcoming-games") },
     ],
-    links: [{ rel: "canonical", href: "/upcoming-games" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/upcoming-games") }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(upcomingGamesQueryOptions);

@@ -15,6 +15,7 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as RecordsRouteImport } from './routes/records'
 import { Route as RewardsRouteImport } from './routes/rewards'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as StoreRouteImport } from './routes/store'
 import { Route as UpcomingGamesRouteImport } from './routes/upcoming-games'
 import { Route as PlayersIndexRouteImport } from './routes/players.index'
@@ -50,6 +51,11 @@ const RewardsRoute = RewardsRouteImport.update({
   path: '/rewards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StoreRoute = StoreRouteImport.update({
   id: '/store',
   path: '/store',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/leaderboard': typeof LeaderboardRoute
   '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/leaderboard': typeof LeaderboardRoute
   '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/leaderboard': typeof LeaderboardRoute
   '/records': typeof RecordsRoute
   '/rewards': typeof RewardsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/store': typeof StoreRoute
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/records'
     | '/rewards'
+    | '/sitemap.xml'
     | '/store'
     | '/upcoming-games'
     | '/players/$playerId'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/records'
     | '/rewards'
+    | '/sitemap.xml'
     | '/store'
     | '/upcoming-games'
     | '/players/$playerId'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/leaderboard'
     | '/records'
     | '/rewards'
+    | '/sitemap.xml'
     | '/store'
     | '/upcoming-games'
     | '/players/$playerId'
@@ -154,6 +166,7 @@ export interface RootRouteChildren {
   LeaderboardRoute: typeof LeaderboardRoute
   RecordsRoute: typeof RecordsRoute
   RewardsRoute: typeof RewardsRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StoreRoute: typeof StoreRoute
   UpcomingGamesRoute: typeof UpcomingGamesRoute
   PlayersPlayerIdRoute: typeof PlayersPlayerIdRoute
@@ -204,6 +217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RewardsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/store': {
       id: '/store'
       path: '/store'
@@ -242,6 +262,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeaderboardRoute: LeaderboardRoute,
   RecordsRoute: RecordsRoute,
   RewardsRoute: RewardsRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   StoreRoute: StoreRoute,
   UpcomingGamesRoute: UpcomingGamesRoute,
   PlayersPlayerIdRoute: PlayersPlayerIdRoute,

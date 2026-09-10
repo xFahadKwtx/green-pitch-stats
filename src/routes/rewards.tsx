@@ -18,6 +18,7 @@ import {
 import { Badge, PageHeader, PageShell, SectionTitle } from "@/components/ui-kit";
 import { positionChallenges } from "@/data/site";
 import { useI18n, type TKey } from "@/lib/i18n";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/rewards")({
   head: () => ({
@@ -33,9 +34,9 @@ export const Route = createFileRoute("/rewards")({
         property: "og:description",
         content: "Free matches, monthly discounts and the official competition criteria.",
       },
-      { property: "og:url", content: "/rewards" },
+      { property: "og:url", content: absoluteUrl("/rewards") },
     ],
-    links: [{ rel: "canonical", href: "/rewards" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/rewards") }],
   }),
   component: RewardsPage,
 });

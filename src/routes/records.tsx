@@ -7,6 +7,7 @@ import { PageHeader, PageShell } from "@/components/ui-kit";
 import type { RecordEntry } from "@/data/types";
 import { useI18n } from "@/lib/i18n";
 import { recordsQueryOptions } from "@/lib/records-query";
+import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/records")({
   head: () => ({
@@ -23,9 +24,9 @@ export const Route = createFileRoute("/records")({
         content:
           "The breakable records board for Al-Mustatil Al-Akhdar. See the marks and who holds them.",
       },
-      { property: "og:url", content: "/records" },
+      { property: "og:url", content: absoluteUrl("/records") },
     ],
-    links: [{ rel: "canonical", href: "/records" }],
+    links: [{ rel: "canonical", href: absoluteUrl("/records") }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(recordsQueryOptions);
