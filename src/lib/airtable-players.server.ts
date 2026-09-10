@@ -181,12 +181,11 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
     for (const record of monthRows[index] ?? []) {
       const stats = monthStats(record.fields);
       if (!hasAnyValue(stats)) continue;
-      const links = record.fields[MONTH_PLAYER_FIELDS[month]];
+      const links = linkedPlayerIds(record.fields, MONTH_PLAYER_FIELDS[month]);
       const owners = new Set(
-        Array.isArray(links)
-          ? links.filter((id): id is string => typeof id === "string" && masterPlayerIds.has(id))
-          : [],
+        (links ?? []).filter((id) => masterPlayerIds.has(id)),
       );
+
       if (owners.size > 1) throw new Error("Ambiguous monthly player ownership");
       const [playerRecordId] = owners;
       if (!playerRecordId || !publicPlayerRecordIds.has(playerRecordId)) continue;
