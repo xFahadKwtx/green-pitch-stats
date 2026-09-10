@@ -114,7 +114,7 @@ export function SiteHeader() {
           <button
             type="button"
             onClick={toggle}
-            aria-label="Switch language"
+            aria-label={t("language.switch")}
             className="flex h-10 items-center gap-1.5 rounded-full border border-border px-2.5 text-[13px] font-semibold text-foreground transition-colors hover:border-gold/60 hover:text-gold"
           >
             <Globe className="h-4 w-4" aria-hidden />

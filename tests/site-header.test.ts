@@ -73,6 +73,7 @@ mock.module("../src/lib/i18n", () => ({
     lang,
     toggle: () => { lang = lang === "en" ? "ar" : "en"; },
     t: (key: string) => {
+      if (key === "language.switch") return lang === "en" ? "Switch language" : "تغيير اللغة";
       if (key === "menu") return lang === "en" ? "Menu" : "القائمة";
       if (key === "close") return lang === "en" ? "Close" : "إغلاق";
       return key;

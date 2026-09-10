@@ -12,6 +12,17 @@ export type Lang = "en" | "ar";
 
 const dict = {
   en: {
+    "language.switch": "Switch language",
+    "results.last5": "Last 5 results",
+    "results.win": "Win",
+    "results.loss": "Loss",
+    "results.draw": "Draw",
+    "fallback.notFoundTitle": "Page not found",
+    "fallback.notFoundBody": "The page you're looking for doesn't exist or has been moved.",
+    "fallback.errorTitle": "This page didn't load",
+    "fallback.errorBody": "Something went wrong on our end. You can try refreshing or head back home.",
+    "fallback.retry": "Try again",
+    "fallback.home": "Go home",
     brand: "Al-Mustatil Al-Akhdar",
     brandTag: "Football Performance Platform",
     "nav.home": "Home",
@@ -151,6 +162,17 @@ const dict = {
     lang: "العربية",
   },
   ar: {
+    "language.switch": "تغيير اللغة",
+    "results.last5": "نتائج آخر خمس مباريات",
+    "results.win": "فوز",
+    "results.loss": "خسارة",
+    "results.draw": "تعادل",
+    "fallback.notFoundTitle": "الصفحة غير موجودة",
+    "fallback.notFoundBody": "الصفحة التي تبحث عنها غير موجودة أو تم نقلها.",
+    "fallback.errorTitle": "تعذّر تحميل هذه الصفحة",
+    "fallback.errorBody": "حدث خطأ من جانبنا. يمكنك المحاولة مجددًا أو العودة إلى الصفحة الرئيسية.",
+    "fallback.retry": "حاول مجددًا",
+    "fallback.home": "العودة إلى الرئيسية",
     brand: "المستطيل الأخضر",
     brandTag: "منصة أداء كرة القدم",
     "nav.home": "الرئيسية",
@@ -303,6 +325,31 @@ const globalCtxStore = globalThis as typeof globalThis & {
 };
 const I18nContext = (globalCtxStore.__maaI18nContext ??= createContext<I18nValue | null>(null));
 const STORAGE_KEY = "maa-lang";
+let sessionLanguage: Lang | undefined;
+
+/** Safe fallback copy even when the provider cannot mount. */
+export function useFallbackTranslation() {
+  const current = useContext(I18nContext);
+  const [lang, setLang] = useState<Lang>("en");
+  useEffect(() => {
+    const knownLanguage = current?.lang ?? sessionLanguage;
+    if (knownLanguage) {
+      setLang(knownLanguage);
+      return;
+    }
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved === "ar" || saved === "en") setLang(saved);
+    } catch {
+      /* Keep English when no language can be safely determined. */
+    }
+  }, [current?.lang]);
+  return {
+    lang,
+    dir: lang === "ar" ? "rtl" as const : "ltr" as const,
+    t: (key: TKey) => dict[lang][key],
+  };
+}
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
@@ -317,6 +364,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    sessionLanguage = lang;
     const dir = lang === "ar" ? "rtl" : "ltr";
     document.documentElement.setAttribute("dir", dir);
     document.documentElement.setAttribute("lang", lang);
@@ -324,6 +372,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
+    sessionLanguage = l;
     try {
       window.localStorage.setItem(STORAGE_KEY, l);
     } catch {

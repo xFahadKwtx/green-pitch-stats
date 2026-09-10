@@ -213,13 +213,16 @@ function Last5Results({
 }: {
   results: Array<"W" | "L" | "D" | null>;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="mt-10 flex justify-center gap-3 sm:gap-4" aria-label="Last 5 results">
+    <div className="mt-10 flex justify-center gap-3 sm:gap-4" role="group" dir="ltr" aria-label={t("results.last5")}>
       {results.map((result, index) => {
         const isEmpty = result === null;
         return (
           <div
             key={index}
+            role={isEmpty ? undefined : "img"}
+            aria-label={isEmpty ? undefined : t(result === "W" ? "results.win" : result === "L" ? "results.loss" : "results.draw")}
             className={cn(
               "flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold uppercase text-white sm:h-12 sm:w-12 sm:text-base",
               result === "W" &&
