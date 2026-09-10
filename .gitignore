@@ -18,7 +18,16 @@ dist-ssr
 
 # Wrangler / Cloudflare
 .wrangler/
+
+# Private environment files; allow sanitized examples and templates.
+.env
+.env.*
 .dev.vars
+.dev.vars.*
+!.env.example
+!.env.sample
+!.env.template
+!.dev.vars.example
 
 # Editor directories and files
 .vscode/*
