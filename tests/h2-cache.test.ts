@@ -264,6 +264,8 @@ class FakeWorld {
     if (Number(args["p_schema_version"]) !== 1) {
       throw new Error("unsupported schema version");
     }
+    // Unknown/malformed keys fail closed (the SQL raises on them).
+    if (!KEY_PATTERN.test(key)) throw new Error("invalid cache key");
     const row = this.row(key);
     if (
       row.payload !== null &&
@@ -275,7 +277,9 @@ class FakeWorld {
     }
     if (!this.control.enabled) return { status: "disabled" };
     this.normalizeWindows();
-    if (this.control.leaseExpiresAt !== null && this.control.leaseExpiresAt > this.now) {
+    // Busy only when THIS feed's own lease is held; other feeds never block it.
+    const lease = this.lease(key);
+    if (lease.expiresAt !== null && lease.expiresAt > this.now) {
       return { status: "busy", recheck_after_ms: 1000 };
     }
     if (row.retryAfter !== null && row.retryAfter > this.now) {
@@ -291,17 +295,16 @@ class FakeWorld {
       return { status: "budget_exhausted" };
     }
     const token = `token-${++this.tokenSeq}`;
-    this.control.leaseToken = token;
-    this.control.leaseFeed = key;
-    this.control.leaseStartedAt = this.now;
-    this.control.leaseExpiresAt = this.now + LEASE_MS;
-    this.control.lastPageSequence = 0;
+    lease.token = token;
+    lease.startedAt = this.now;
+    lease.expiresAt = this.now + LEASE_MS;
+    lease.lastPageSequence = 0;
     // The prior payload's refresh_started_at is intentionally untouched.
     return {
       status: "claimed",
       lease_token: token,
       refresh_deadline_ms: DEADLINE_MS,
-      lease_expires_at: this.control.leaseExpiresAt,
+      lease_expires_at: lease.expiresAt,
     };
   }
 
@@ -314,31 +317,35 @@ class FakeWorld {
     if (typeof key !== "string" || token === null || token === undefined) {
       return { status: "invalid" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "invalid" };
     if (!Number.isInteger(sequence) || sequence < 1) return { status: "invalid" };
     if (this.ownerInvalid(key, token)) return { status: "expired" };
     if (!c.enabled) return { status: "disabled" };
-    if (c.leaseStartedAt === null || this.now >= c.leaseStartedAt + DEADLINE_MS) {
+    const lease = this.lease(key);
+    if (lease.startedAt === null || this.now >= lease.startedAt + DEADLINE_MS) {
       return { status: "deadline_exceeded" };
     }
-    if (sequence !== c.lastPageSequence + 1) return { status: "sequence_conflict" };
+    // Strictly sequential WITHIN this feed's refresh.
+    if (sequence !== lease.lastPageSequence + 1) return { status: "sequence_conflict" };
     // Every grant must charge the CURRENT UTC day/month window.
     this.normalizeWindows();
     if (c.cooldownUntil !== null && c.cooldownUntil > this.now) return { status: "cooldown" };
     if (c.dayUsed >= c.dayLimit || c.monthUsed >= c.monthLimit) {
       return { status: "budget_exhausted" };
     }
+    // Global dispatch spacing, shared by every feed.
     if (c.nextRequestAt !== null && c.nextRequestAt > this.now) {
       return { status: "paced", wait_ms: c.nextRequestAt - this.now };
     }
     c.dayUsed += 1;
     c.monthUsed += 1;
-    c.lastPageSequence = sequence;
+    lease.lastPageSequence = sequence;
     c.nextRequestAt = this.now + PACING_MS;
     return {
       status: "granted",
       usable_for_ms: 1000,
       sequence,
-      refresh_deadline_ms: c.leaseStartedAt + DEADLINE_MS - this.now,
+      refresh_deadline_ms: lease.startedAt + DEADLINE_MS - this.now,
     };
   }
 
