@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowUpRight, ShoppingBag, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
@@ -106,6 +107,23 @@ function PriceTag({
   );
 }
 
+function ProductImage({ url, name }: { url: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
+  return url && !failed ? (
+    <img
+      src={url}
+      alt={name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+    />
+  ) : (
+    <div className="grid h-full place-items-center text-gold/70" aria-hidden>
+      <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
+    </div>
+  );
+}
+
 function ProductCard({ product }: { product: StoreItem }) {
   const { t, lang } = useI18n();
   const name = lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
@@ -116,18 +134,7 @@ function ProductCard({ product }: { product: StoreItem }) {
   return (
     <article className="glass-card group flex h-full flex-col overflow-hidden transition-transform duration-300 hover:-translate-y-1 hover:border-gold/40">
       <div className="relative aspect-square overflow-hidden border-b border-border bg-glass">
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={name}
-            loading="lazy"
-            className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <div className="grid h-full place-items-center text-gold/70" aria-hidden>
-            <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
-          </div>
-        )}
+        <ProductImage key={`${product.id}-${product.imageUrl}`} url={product.imageUrl} name={name} />
         <span className="absolute top-2 end-2 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
           <PriceTag price={price} variant="badge" />
         </span>
