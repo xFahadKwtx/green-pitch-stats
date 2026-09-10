@@ -387,7 +387,7 @@ class FakeWorld {
     row.retryAfter = null;
     row.failureCount = 0;
     row.lastPageCounts = counts as Record<string, number>;
-    this.releaseLease();
+    this.releaseLease(key);
     return { status: "published", fresh_until: row.freshUntil };
   }
 
@@ -397,8 +397,9 @@ class FakeWorld {
     if (typeof key !== "string" || token === null || token === undefined) {
       return { status: "ignored", reason: "invalid_arguments" };
     }
+    if (!KEY_PATTERN.test(key)) return { status: "ignored", reason: "invalid_arguments" };
     const row = this.row(key);
-    // A stale or expired owner may not alter ANY state.
+    // A stale or expired owner may not alter ANY state, of any feed.
     if (this.ownerInvalid(key, token)) return { status: "ignored", reason: "stale_lease" };
 
     row.failureCount += 1;
@@ -412,17 +413,18 @@ class FakeWorld {
       // Never shorten an existing cooldown.
       this.control.cooldownUntil = Math.max(this.control.cooldownUntil ?? 0, until);
     }
-    this.releaseLease();
+    this.releaseLease(key);
     return { status: "recorded", released: true };
   }
 
 
-  private releaseLease() {
-    this.control.leaseToken = null;
-    this.control.leaseFeed = null;
-    this.control.leaseStartedAt = null;
-    this.control.leaseExpiresAt = null;
-    this.control.lastPageSequence = 0;
+  /** Releases ONLY this feed's lease. */
+  private releaseLease(key: string) {
+    const lease = this.lease(key);
+    lease.token = null;
+    lease.startedAt = null;
+    lease.expiresAt = null;
+    lease.lastPageSequence = 0;
   }
 
   /** ---- fake Airtable gateway ---- */
