@@ -1,58 +1,163 @@
-# Diagnosis: player statistics are all zero (read-only, nothing changed)
+# Final URL Selection + L2 SEO Scope (read-only report, nothing changed)
 
-## What the visitor sees now
+Tested HEAD: `189455b6b8ddcc1e229b780ab1ac41ec598a9fd6` (latest remote/main; after the
+approved mobile-overflow fix at `3aa3c1c`). Working tree clean. No code, data, settings,
+Airtable, Supabase, git, migration, or deployment changes were made for this report.
 
-- The Players Stats page is **not** unavailable and **not** empty of players: it lists **96 players** with correct English/Arabic names and positions, and the position filter works.
-- What is empty is the **statistics**. Opening any profile (checked `/players/p056`) shows every value as zero: games played 0, goals 0, assists 0, shots 0, passes 0, pass accuracy 0%, tackles 0, clearances 0, dribbles 0, key passes 0, chances created 0, ratings 0.00, MVP 0 — for June, July, August, September and All. The points balance also shows 0.
+## 1. Subdomain availability — CANNOT be verified pre-publish
 
-So "the statistics page is empty" = players load, numbers do not.
+There is no platform tool that checks `*.lovable.app` subdomain availability before
+publishing. The available checks are:
 
-## Where the data disappears
+- `project_urls--get_urls` → returns only THIS project's preview/published/custom URLs.
+  Result: `preview_url` = `https://id-preview--e9ce5ab4-...lovable.app`,
+  `published_url` = **null**, `inactive_custom_domains` = none.
+- `registrar_domain--search_domains` → checks real-TLD custom domain registration
+  (.com, .io, …), NOT `*.lovable.app` subdomains. Not applicable here.
 
-Confirmed by reading the live saved copy of the players feed:
+The `*.lovable.app` subdomain slug is assigned/reserved at first **publish** time (via
+the publish dialog / `preview_ui--publish` `slug` parameter). Whether a specific slug is
+already taken by another Lovable project can only be confirmed by attempting to publish
+with that slug — which the user has forbidden in this step.
 
-- 96 saved players, saved 14:22 UTC, valid until 14:37 UTC, no failure count, no retry/backoff.
-- **0 of 96 players have any monthly statistics at all**, and **0 of 96 have a points value** (all null).
-- The refresh did read the master player table and all four monthly tables (page counts recorded for all five tables), so the monthly rows were downloaded successfully.
+**Verdict per candidate:**
 
-This rules out the areas you asked about:
+| # | Candidate subdomain | Availability status |
+|---|---------------------|---------------------|
+| 1 | `almustatil.lovable.app` | **Cannot be checked pre-publish** |
+| 2 | `almustatil-alakhdar.lovable.app` | **Cannot be checked pre-publish** |
 
-1. Saved-copy/refresh state: healthy. No lease held, no cooldown, no rate-limit backoff, daily use 113 of 2100, monthly 266 of 65000.
-2. Per-feed refresh slots: active in the live database — all eight slots present and free; Players can claim and refresh normally (it did, twice, in the last hour).
-3. Airtable reachability: fine — five tables fetched, all pages valid, no upstream errors in the server log since 14:24.
-4. Visibility filtering: not the cause — 96 visible players survived it.
-5. Position/month handling: not the cause — positions and groups are correct on every card.
-6. Month configuration: all four months are configured and all four monthly tables were read.
-7. Client/hydration: not the cause — the server payload itself already contains no numbers.
+Both are valid slug shapes (lowercase, hyphenated). At publish time, pass the desired
+slug to `preview_ui--publish`; if it is already claimed by another project, the publish
+step will report the conflict and we can fall back to the other candidate or a new one.
 
-So the loss happens in **one place only**: matching each monthly statistics row to its player, plus the points field, inside `fetchPlayersFromAirtable` in `src/lib/airtable-players.server.ts`.
+## 2. Current publication status
 
-## Most likely cause (needs one confirmation read)
+- **Not published.** `published_url` is `null`.
+- No custom domains connected (`inactive_custom_domains`: none).
+- The only live host is the draft preview: `https://id-preview--e9ce5ab4-...lovable.app`.
+- Nothing was published or deployed during this report.
 
-That function matches monthly rows to players through fixed Airtable field names:
+## 3. Current SEO state in the codebase (as found)
 
-```text
-June      -> "احصائيات اللاعبين"
-July      -> "PLAYERS DATABASE"
-August    -> "PLAYERS DATABASE 2"
-September -> "PLAYERS DATABASE 2"
-points    -> "Points Balance"
-```
+- 11 route files define `head()` meta: `__root.tsx`, `index.tsx`, `store.tsx`,
+  `compare.tsx`, `contact.tsx`, `leaderboard.tsx`, `upcoming-games.tsx`, `records.tsx`,
+  `rewards.tsx`, `players.$playerId.tsx`, `players.index.tsx`.
+- Each has a unique `<title>`, meta description, `og:title`, `og:description`.
+- `__root.tsx` sets `og:type=website` and `twitter:card=summary_large_image` globally.
+- **No `canonical` link** exists on any route (`rg canonical` → 0 hits).
+- **No `og:url`** on any route (`rg og:url` → 0 hits).
+- **No `og:image` / `twitter:image`** on any route. The only hero/brand image is the
+  logo, a **bundled relative asset** (`/__l5e/assets-v1/.../logo.png`, not an absolute
+  https URL). Per metadata rules, a relative/bundled image must NOT be tagged, so both
+  are correctly omitted today.
+- `public/robots.txt` exists and allows all crawlers, but has **no `Sitemap:` directive**.
+- **No sitemap route** exists (`src/routes/sitemap.xml.*` absent).
+- No shared base-URL / `SITE_URL` constant exists anywhere in `src/`.
 
-Airtable field names are case- and spelling-sensitive. Earlier inspections of this base recorded the link fields as `احصائيات اللاعب`, `Players DATABASE` and `Players DATABASE 2` (mixed case), which do not match the upper-case names in the code. If the names in the base differ by even one character or letter case, every monthly row is treated as having no owner and is dropped — which is exactly the all-zero pattern observed. The points field being empty for all 96 players points the same way: a renamed or removed field in the master table.
+## 4. Exact minimal L2 file scope (to implement AFTER the final URL is chosen)
 
-This is **deterministic**, not transient: it will show zeros on every load until the names match. It is unrelated to the refresh-slot and 15-minute-expiry work.
+Scope is limited to URL-dependent launch metadata. Two parts: (A) per-route absolute
+metadata, (B) robots + sitemap. Part A is required; Part B is recommended.
 
-I have not confirmed the current Airtable field names, because that requires a live read of the base. Confirming them is step 1 below.
+### A. Canonical + og:url (required) — 11 route files + 1 new config
 
-## Proposed smallest safe fix (awaiting your approval)
+Add a single source of truth for the final origin, then reference it from each `head()`.
 
-1. Read-only inspection of the base: list the actual field names of the master player table and the four monthly statistics tables, and confirm which link field each monthly table uses and what the points field is called. No writes, no load test.
-2. Align only those names in `src/lib/airtable-players.server.ts` (the link-field map and the points field), making the lookup tolerant of case and surrounding whitespace so a future rename in Airtable cannot silently blank every statistic again.
-3. Add a guard test that fails loudly if a monthly table yields rows but no player matches at all, so this cannot go unnoticed again.
+1. **New file `src/lib/site-url.ts`** (or extend `src/data/site.ts`)
+   - Export `const SITE_URL = "https://<final-subdomain-or-custom-domain>"` (set once
+     the URL is chosen; single place to update later if the domain changes).
+   - Export a tiny helper `canonicalFor(path: string)` returning `${SITE_URL}${path}`
+     and an `ogUrlFor(path)` alias, so no route hardcodes the host.
 
-No other file, no database change, no Airtable change, no publishing.
+2. **`src/routes/__root.tsx`** — add to `head().meta`:
+   - `{ property: "og:url", content: SITE_URL }` (root/canonical home URL).
+   - Do NOT add `canonical` to `__root` (root has no path of its own); canonicals belong
+     on leaf routes.
 
-## Alternative cause if names turn out to match
+3. **Each of the 10 leaf route files** — add two entries to `head().meta`:
+   - `{ name: "canonical", content: canonicalFor("/<route-path>") }` — wait: TanStack
+     uses `links` for canonical, not `meta`. Correct form:
+     - In `head().links`: `{ rel: "canonical", href: canonicalFor("/<path>") }`
+     - In `head().meta`: `{ property: "og:url", content: canonicalFor("/<path>") }`
+   - For `players.$playerId.tsx` (dynamic), use the loader's player id/slug so each
+     profile gets its own canonical/og:url.
 
-If the field names are correct, then the monthly rows themselves are linking to players that are hidden or to master rows the code does not accept, and step 1's inspection will show that directly; the fix would then be in the same function's owner-resolution logic. Either way, the change stays inside `src/lib/airtable-players.server.ts`.
+Leaf files + paths:
+- `index.tsx` → `/`
+- `upcoming-games.tsx` → `/upcoming-games`
+- `players.index.tsx` → `/players`
+- `players.$playerId.tsx` → `/players/<id>` (dynamic, per-record)
+- `compare.tsx` → `/compare`
+- `leaderboard.tsx` → `/leaderboard`
+- `records.tsx` → `/records`
+- `store.tsx` → `/store`
+- `rewards.tsx` → `/rewards`
+- `contact.tsx` → `/contact`
+
+Each change is mechanical: import the helper, add one `links` entry + one `meta` entry.
+No titles, descriptions, styling, logic, data, or cache behavior changes.
+
+### og:image / twitter:image — NO change needed
+
+The only cover image is the bundled relative logo. Per metadata rules, relative/bundled
+images are omitted. If the user later supplies an absolute https social preview image
+(hosted on the custom domain), only `index.tsx` (and optionally `__root`) would gain
+`og:image`/`twitter:image` pointing at that absolute URL. Not required for launch.
+
+### B. robots.txt + sitemap (recommended, URL-dependent)
+
+4. **`public/robots.txt`** — append one line:
+   `Sitemap: https://<final-url>/sitemap.xml`
+   (Keep existing allow rules unchanged.)
+
+5. **New file `src/routes/sitemap.xml.ts`** (TanStack server route)
+   - Generate `<?xml ...?><urlset>` with one `<url>` per static route (the 10 leaf paths
+     above) plus one `<url>` per visible player profile (`/players/<id>`), using
+     `SITE_URL` for absolute `loc`. Read the player roster via the existing players
+     query/cache (read-only). Set `Content-Type: application/xml`.
+   - This is optional for launch but standard for L2 SEO; it is the only new
+     runtime file in the scope.
+
+### Summary of files L2 would touch
+
+| File | Change |
+|------|--------|
+| `src/lib/site-url.ts` (NEW) | `SITE_URL` constant + `canonicalFor` helper |
+| `src/routes/__root.tsx` | add `og:url` (home) |
+| `src/routes/index.tsx` | add canonical link + `og:url` |
+| `src/routes/upcoming-games.tsx` | add canonical link + `og:url` |
+| `src/routes/players.index.tsx` | add canonical link + `og:url` |
+| `src/routes/players.$playerId.tsx` | add canonical link + `og:url` (dynamic) |
+| `src/routes/compare.tsx` | add canonical link + `og:url` |
+| `src/routes/leaderboard.tsx` | add canonical link + `og:url` |
+| `src/routes/records.tsx` | add canonical link + `og:url` |
+| `src/routes/store.tsx` | add canonical link + `og:url` |
+| `src/routes/rewards.tsx` | add canonical link + `og:url` |
+| `src/routes/contact.tsx` | add canonical link + `og:url` |
+| `public/robots.txt` | append `Sitemap:` line |
+| `src/routes/sitemap.xml.ts` (NEW, optional) | dynamic sitemap using `SITE_URL` |
+
+No other production files. No data, cache, Airtable, H2, UI, dependency, or business
+logic changes. The single `SITE_URL` constant means a future custom-domain swap is a
+one-line change.
+
+## 5. Confirmation
+
+No code, data, plan-irrelevant files, migrations, Airtable records, Supabase state,
+git state, project settings, subdomains, publications, or deployments were changed
+during this report. This document (`.lovable/plan.md`) is the only file written.
+
+## Next step
+
+Choose the final URL. Two options:
+
+1. **Pick a `*.lovable.app` slug** — at the publish step, pass `almustatil` or
+   `almustatil-alakhdar` as the slug; the publish result confirms whether it was free.
+   Then implement Part A (and optionally B) above with that `SITE_URL`.
+2. **Connect a custom domain** (e.g. `almustatilalakhdar.com`) — publish to the
+   Lovable slug first, then connect the custom domain in Project Settings → Domains,
+   and set `SITE_URL` to the custom domain once it is Active/Primary.
+
+Either way, recommend implementing L2 SEO (Part A) immediately after the URL is fixed,
+before going fully live.
