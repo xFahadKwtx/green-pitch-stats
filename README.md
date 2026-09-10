@@ -499,11 +499,46 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Use Node.js **24.19.0** and Bun **1.4.2**, the locally validated versions. Bun is the authoritative package manager and `bun.lock` is the authoritative lockfile. Do not use npm to install dependencies or generate another lockfile.
 
 ```sh
 git clone <this-repository-url>
 cd <repository-name>
-npm i
-npm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
+
+## Release validation
+
+From a clean checkout of the exact commit intended for release:
+
+```sh
+bun install --frozen-lockfile
+bun run validate
+bun audit --json
+bun run lint
+```
+
+`bun run validate` requires all three checks to pass, stopping on failure:
+
+- `bun run test`: `bun test --isolate --timeout 15000`. Isolation is required because suites mock shared modules and globals. Plain `bun test` is not the supported release command. The current baseline is 855 passing tests and 10,983 assertions.
+- `bun run typecheck`: `tsc --noEmit`, checking the application/configuration included by `tsconfig.json`.
+- `bun run build`: the unchanged `vite build` production build.
+
+The advisory check sends only package names and locked versions to npm's security-advisory service. An advisory or a lookup failure blocks security validation; a failed lookup is unresolved, never a clean result. Review findings and obtain approval for any dependency remediation; do not run automatic fixes.
+
+Lint is temporarily **informational and non-blocking**, outside `validate`. Its existing baseline is 1,035 errors (998 formatting, 36 explicit-any findings in tests, one prefer-const finding) and seven Fast Refresh warnings. Review the output for new issues; this policy does not suppress rules or approve unrelated cleanup.
+
+`.github/workflows/validate.yml` runs on pushes to `main` and pull requests targeting `main`, using the pinned runtimes and frozen installation. Tests, typecheck, production build and security validation are mandatory; lint runs informationally. CI uses read-only repository permissions, no production credentials and no publishing step. It does not configure branch protection or prevent publication through Lovable by itself.
+
+**Publish only the exact commit that passed all required checks.** Revalidate after any change. For a pull request, also require the checks on the final `main` commit before publishing. CI validates only; publication remains a separate authorized action.
+
+### Manual pre-launch checklist
+
+- Check English and Arabic, including RTL layout and localized numbers.
+- Check mobile navigation by keyboard and touch, closing/focus behavior and desktop resize.
+- Follow Players → Profile → Compare, including direct navigation and hydration.
+- Confirm Store displayed prices match WhatsApp order prices; unavailable pricing must prevent ordering.
+- Check Upcoming Games in Kuwait time, the Sunday–Saturday week and exact start cutoff, including an already-open page.
+- Check unavailable-feed/error behavior using controlled fixtures, without load testing Airtable.
+- Confirm server-rendered pages and an unknown-route 404; inspect browser errors during these journeys.
