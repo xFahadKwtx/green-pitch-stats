@@ -9,12 +9,14 @@ import { PUBLIC_ERROR_MESSAGE } from "../src/lib/public-error";
 import { aggregateKeeper, aggregateOutfield } from "../src/lib/stats";
 
 const A = "recAlpha12345678", B = "recBeta123456789", U = "recUnresolved1234";
+/** Exactly the link field names present in the live Airtable base. */
 const months: [MonthKey, string, string][] = [
-  ["2026-06", AIRTABLE_TABLES.statsJune, "احصائيات اللاعبين"],
-  ["2026-07", AIRTABLE_TABLES.statsJuly, "PLAYERS DATABASE"],
-  ["2026-08", AIRTABLE_TABLES.statsAugust, "PLAYERS DATABASE 2"],
-  ["2026-09", AIRTABLE_TABLES.statsSeptember, "PLAYERS DATABASE 2"],
+  ["2026-06", AIRTABLE_TABLES.statsJune, "احصائيات اللاعب"],
+  ["2026-07", AIRTABLE_TABLES.statsJuly, "Players DATABASE"],
+  ["2026-08", AIRTABLE_TABLES.statsAugust, "Players DATABASE 2"],
+  ["2026-09", AIRTABLE_TABLES.statsSeptember, "Players DATABASE 2"],
 ];
+
 const full = {
   "Games played": 3, Goals: 2, Assists: 1, MVP: 2, POTM: true,
   "SHOTS ttl - SOT": "8 - 4", Passes: "9 - 7", Tackles: 6, Clearences: 3,
