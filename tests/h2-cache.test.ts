@@ -985,6 +985,27 @@ describe("pagination and permits", () => {
     }
   });
 
+  test("pacing waits are bounded by the refresh deadline, not an attempt count", async () => {
+    seedFullBase();
+    // Long shared spacing backlog (other feeds queued ahead): the 3s wait cap
+    // means far more than eight pacing waits, all still inside the 45s deadline.
+    world.control.nextRequestAt = world.now + 27_000;
+    const data = await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
+    expect(Array.isArray(data)).toBe(true);
+    expect(world.airtableRequests.length).toBeGreaterThan(0);
+    expect(world.rows.get("production:records")!.payload).not.toBeNull();
+  });
+
+  test("pacing still fails closed when the backlog outlasts the refresh deadline", async () => {
+    seedFullBase();
+    world.control.nextRequestAt = world.now + 120_000;
+    await expect(
+      getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records)),
+    ).rejects.toThrow(FeedUnavailableError);
+    expect(world.airtableRequests.length).toBe(0);
+  });
+
+
   test("expired permit window is never reused (RPC elapsed time counts)", async () => {
     seedFullBase();
     // 1.2s is consumed INSIDE the permit round-trip, so the 1s usable window
