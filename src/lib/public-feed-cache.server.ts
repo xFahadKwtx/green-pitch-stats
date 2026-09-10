@@ -41,8 +41,10 @@ export const RPC_TIMEOUT_MS = 5_000;
 
 /** Bounded busy rechecks: no unbounded per-visitor polling. */
 const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
-const MAX_PACING_WAITS = 8;
+/** Pacing waits are deadline-bounded; the floor bounds coordinator RPC churn. */
+const MIN_PACING_WAIT_MS = 250;
 const MAX_PACING_WAIT_MS = 3_000;
+
 
 export const CONTROL_CACHE_KEY = "control:base";
 
