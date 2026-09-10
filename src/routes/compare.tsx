@@ -27,7 +27,9 @@ export const Route = createFileRoute("/compare")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:url", content: "/compare" },
     ],
+    links: [{ rel: "canonical", href: "/compare" }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

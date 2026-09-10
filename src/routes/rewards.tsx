@@ -33,7 +33,9 @@ export const Route = createFileRoute("/rewards")({
         property: "og:description",
         content: "Free matches, monthly discounts and the official competition criteria.",
       },
+      { property: "og:url", content: "/rewards" },
     ],
+    links: [{ rel: "canonical", href: "/rewards" }],
   }),
   component: RewardsPage,
 });

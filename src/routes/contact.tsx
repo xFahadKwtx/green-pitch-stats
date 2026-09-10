@@ -19,7 +19,9 @@ export const Route = createFileRoute("/contact")({
         property: "og:description",
         content: "WhatsApp, community group, Instagram and TikTok links.",
       },
+      { property: "og:url", content: "/contact" },
     ],
+    links: [{ rel: "canonical", href: "/contact" }],
   }),
   component: ContactPage,
 });

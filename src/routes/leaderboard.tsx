@@ -26,7 +26,9 @@ export const Route = createFileRoute("/leaderboard")({
         property: "og:description",
         content: "See who leads every category this month at Al-Mustatil Al-Akhdar.",
       },
+      { property: "og:url", content: "/leaderboard" },
     ],
+    links: [{ rel: "canonical", href: "/leaderboard" }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

@@ -18,7 +18,7 @@ export const Route = createFileRoute("/players/$playerId")({
     return { player };
   },
   errorComponent: () => <FeedErrorNotice />,
-  head: ({ loaderData }) => {
+  head: ({ loaderData, params }) => {
     if (!loaderData) {
       return {
         meta: [
@@ -30,13 +30,16 @@ export const Route = createFileRoute("/players/$playerId")({
     const { player } = loaderData;
     const title = `${player.name} — Player Stats | Al-Mustatil Al-Akhdar`;
     const description = `Match statistics, points balance and monthly performance for ${player.name} at Al-Mustatil Al-Akhdar.`;
+    const url = `/players/${params.playerId}`;
     return {
       meta: [
         { title },
         { name: "description", content: description },
         { property: "og:title", content: title },
         { property: "og:description", content: description },
+        { property: "og:url", content: url },
       ],
+      links: [{ rel: "canonical", href: url }],
     };
   },
   component: PlayerProfile,

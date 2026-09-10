@@ -32,7 +32,9 @@ export const Route = createFileRoute("/upcoming-games")({
         property: "og:description",
         content: "See this week's bookings and register on WhatsApp in one tap.",
       },
+      { property: "og:url", content: "/upcoming-games" },
     ],
+    links: [{ rel: "canonical", href: "/upcoming-games" }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(upcomingGamesQueryOptions);

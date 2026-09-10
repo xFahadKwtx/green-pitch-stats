@@ -24,7 +24,9 @@ export const Route = createFileRoute("/players/")({
         property: "og:description",
         content: "Browse the squad and open any player for detailed match statistics.",
       },
+      { property: "og:url", content: "/players" },
     ],
+    links: [{ rel: "canonical", href: "/players" }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(playersQueryOptions);

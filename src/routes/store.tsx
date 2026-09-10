@@ -26,7 +26,9 @@ export const Route = createFileRoute("/store")({
         content:
           "Browse football rewards from Al-Mustatil Al-Akhdar and request products through WhatsApp.",
       },
+      { property: "og:url", content: "/store" },
     ],
+    links: [{ rel: "canonical", href: "/store" }],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(storeQueryOptions),
   errorComponent: () => <FeedErrorNotice />,
