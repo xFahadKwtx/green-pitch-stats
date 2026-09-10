@@ -308,8 +308,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved === "ar" || saved === "en") setLangState(saved);
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved === "ar" || saved === "en") setLangState(saved);
+    } catch {
+      /* Keep the default language when storage is unavailable. */
+    }
   }, []);
 
   useEffect(() => {
