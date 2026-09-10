@@ -18,7 +18,7 @@ describe("sitemap", () => {
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(xml).toContain("<urlset");
     expect(xml.trimEnd().endsWith("</urlset>")).toBe(true);
-    expect(xml).not.toContain("http://");
+    expect(xml).not.toContain("<loc>http://");
   });
   it("lists static routes and given players only", () => {
     for (const p of ["/", "/players", "/store", "/records", "/rewards", "/contact", "/compare", "/leaderboard", "/upcoming-games"]) {
