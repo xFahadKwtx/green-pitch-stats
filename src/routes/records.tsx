@@ -23,7 +23,9 @@ export const Route = createFileRoute("/records")({
         content:
           "The breakable records board for Al-Mustatil Al-Akhdar. See the marks and who holds them.",
       },
+      { property: "og:url", content: "/records" },
     ],
+    links: [{ rel: "canonical", href: "/records" }],
   }),
   loader: ({ context }) => {
     void context.queryClient.ensureQueryData(recordsQueryOptions);

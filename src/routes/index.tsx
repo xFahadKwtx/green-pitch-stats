@@ -23,7 +23,9 @@ export const Route = createFileRoute("/")({
         content:
           "Register for weekly games on WhatsApp, track your match statistics and climb the monthly leaderboards.",
       },
+      { property: "og:url", content: "/" },
     ],
+    links: [{ rel: "canonical", href: "/" }],
   }),
   component: Home,
 });

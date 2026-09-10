@@ -93,6 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Football statistics, weekly bookings and rewards for the Al-Mustatil Al-Akhdar community.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "Al-Mustatil Al-Akhdar" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "theme-color", content: "#0b2a1c" },
     ],
