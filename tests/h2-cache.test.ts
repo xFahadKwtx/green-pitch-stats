@@ -263,11 +263,14 @@ class FakeWorld {
 
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
-    // Mirrors the SQL refresh-ahead window: 0 for the plain entry point.
+    // Mirrors the SQL refresh-ahead window: 0 for the plain entry point, and a
+    // wider bound for players/store (scheduled warming).
     const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
-    if (!Number.isFinite(minFresh) || minFresh < 0 || minFresh > 120_000) {
+    const maxWindow = /:(players|store)$/.test(key) ? 360_000 : 120_000;
+    if (!Number.isFinite(minFresh) || minFresh < 0 || minFresh > maxWindow) {
       throw new Error("invalid refresh-ahead window");
     }
+
     if (Number(args["p_schema_version"]) !== 1) {
       throw new Error("unsupported schema version");
     }
