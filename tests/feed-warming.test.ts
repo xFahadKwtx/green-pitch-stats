@@ -500,12 +500,331 @@ describe("warming endpoint authorization and status codes", () => {
     expect(body.feeds["store"]).toBe("published");
   });
 
-  test("a failed feed returns 503 instead of a top-level ok 200", async () => {
+  test("a failed feed with no cache at all returns 503 critical", async () => {
     airtableShouldFail = true;
     const res = await post();
     expect(res.status).toBe(503);
-    const body = (await res.json()) as { status: string; feeds: Record<string, string> };
+    const body = (await res.json()) as {
+      status: string;
+      critical: boolean;
+      feeds: Record<string, string>;
+    };
     expect(body.status).toBe("degraded");
+    expect(body.critical).toBe(true);
     expect(body.feeds["players"]).toBe("failed");
+    // Severity is read-only: the lookup happens, nothing is refreshed again.
+    expect(calls.some((c) => c.fn === "select_cache")).toBe(true);
+    expect(calls.filter((c) => c.fn === "h2_get_or_claim_ahead").length).toBe(2);
+  });
+});
+
+/** A row whose freshness ends at `expiryMs`, read at server clock `dateMs`. */
+function rowExpiringAt(expiryMs: number, dateMs: number): StoredRow {
+  return {
+    payload: [{ id: "old" }],
+    refresh_started_at: new Date(expiryMs - 900_000).toISOString(),
+    fresh_until: new Date(expiryMs).toISOString(),
+    dateMs,
+  };
+}
+
+/** Runs the endpoint with a fixed local wall clock. */
+async function postAt(localNowMs: number): Promise<Response> {
+  const savedNow = Date.now;
+  Date.now = () => localNowMs;
+  try {
+    return await post();
+  } finally {
+    Date.now = savedNow;
+  }
+}
+
+async function severity(res: Response): Promise<{
+  status: number;
+  body: { status: string; critical: boolean; feeds: Record<string, string> };
+}> {
+  return { status: res.status, body: (await res.json()) as never };
+}
+
+describe("scheduled warmer HTTP severity", () => {
+  const NOW = Date.parse("2026-09-11T14:00:00.000Z");
+
+  test("next actual UTC 12-minute boundary, including hour rollover", () => {
+    const at = (iso: string) => Date.parse(iso);
+    expect(nextScheduleBoundaryMs(at("2026-09-11T14:00:00.000Z"))).toBe(
+      at("2026-09-11T14:12:00.000Z"),
+    );
+    expect(nextScheduleBoundaryMs(at("2026-09-11T14:11:59.999Z"))).toBe(
+      at("2026-09-11T14:12:00.000Z"),
+    );
+    expect(nextScheduleBoundaryMs(at("2026-09-11T14:12:00.000Z"))).toBe(
+      at("2026-09-11T14:24:00.000Z"),
+    );
+    expect(nextScheduleBoundaryMs(at("2026-09-11T14:49:30.000Z"))).toBe(
+      at("2026-09-11T15:00:00.000Z"),
+    );
+    expect(nextScheduleBoundaryMs(at("2026-09-11T23:55:00.000Z"))).toBe(
+      at("2026-09-12T00:00:00.000Z"),
+    );
+    expect(SCHEDULE_MARGIN_MS).toBe(60_000);
+  });
+
+  test("a failed feed whose cache outlives the next boundary + margin is 200 degraded, not critical", async () => {
+    airtableShouldFail = true;
+    // Fresh until 14:20 > next boundary 14:12 + 60s.
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    const { status, body } = await severity(await postAt(NOW));
+    expect(status).toBe(200);
+    expect(body.status).toBe("degraded");
+    expect(body.critical).toBe(false);
+    expect(body.feeds["players"]).toBe("failed");
+    expect(body.feeds["store"]).toBe("failed");
+  });
+
+  test("the historical 14:00 failure expiring 14:05 still returns 503", async () => {
+    airtableShouldFail = true;
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:05:00.000Z"), NOW);
+    const { status, body } = await severity(await postAt(NOW));
+    expect(status).toBe(503);
+    expect(body.critical).toBe(true);
+  });
+
+  test("coverage exactly equal to boundary + margin is insufficient (strict)", async () => {
+    airtableShouldFail = true;
+    // The assessment moment is NOW + 1s (server Date precision), so the next
+    // boundary is 14:12 and the requirement is exactly 14:13:00.000.
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:13:00.000Z"), NOW);
+    expect((await severity(await postAt(NOW))).status).toBe(503);
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:13:00.001Z"), NOW);
+    expect((await severity(await postAt(NOW))).status).toBe(200);
+  });
+
+  test("hour rollover is respected around 14:49", async () => {
+    const late = Date.parse("2026-09-11T14:49:30.000Z");
+    airtableShouldFail = true;
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T15:00:30.000Z"), late);
+    expect((await severity(await postAt(late))).status).toBe(503);
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T15:01:30.000Z"), late);
+    expect((await severity(await postAt(late))).status).toBe(200);
+  });
+
+  test("expired, missing, malformed and unreadable caches are all critical 503", async () => {
+    airtableShouldFail = true;
+    const rows: Array<StoredRow | null> = [
+      null,
+      { ...rowExpiringAt(Date.parse("2026-09-11T13:50:00.000Z"), NOW) },
+      { payload: [], refresh_started_at: new Date(NOW).toISOString(), fresh_until: "x", dateMs: NOW },
+      { payload: [{ id: "old" }], refresh_started_at: "not-a-date", fresh_until: "not-a-date", dateMs: NOW },
+    ];
+    for (const row of rows) {
+      storedRow = row;
+      const { status, body } = await severity(await postAt(NOW));
+      expect(status).toBe(503);
+      expect(body.critical).toBe(true);
+    }
+  });
+
+  test("a slow second lookup that crosses a boundary is never ignored", async () => {
+    airtableShouldFail = true;
+    // Players read just before 14:12, Store read after it. Judged against the
+    // LATEST assessment, the required coverage moves to 14:24 + 60s, so the
+    // 14:20 players cache is no longer sufficient.
+    storedRowsByKey = {
+      "production:players": rowExpiringAt(
+        Date.parse("2026-09-11T14:20:00.000Z"),
+        Date.parse("2026-09-11T14:11:50.000Z"),
+      ),
+      "production:store": rowExpiringAt(
+        Date.parse("2026-09-11T14:22:00.000Z"),
+        Date.parse("2026-09-11T14:12:05.000Z"),
+      ),
+    };
+    const { status, body } = await severity(
+      await postAt(Date.parse("2026-09-11T14:11:50.000Z")),
+    );
+    expect(status).toBe(503);
+    expect(body.critical).toBe(true);
+  });
+
+  test("a local clock behind the server clock cannot extend coverage", async () => {
+    airtableShouldFail = true;
+    // Server says 14:12:30 while the local clock claims 14:00. The later
+    // (server) reading wins, so 14:20 no longer bridges 14:24 + 60s.
+    storedRow = rowExpiringAt(
+      Date.parse("2026-09-11T14:20:00.000Z"),
+      Date.parse("2026-09-11T14:12:30.000Z"),
+    );
+    expect((await severity(await postAt(NOW))).status).toBe(503);
+  });
+
+  test("mixed outcomes: one failed feed with sufficient cache beside a skip is 200", async () => {
+    airtableShouldFail = true;
+    claimStatusByKey = { "production:store": "fresh" };
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    const { status, body } = await severity(await postAt(NOW));
+    expect(status).toBe(200);
+    expect(body.status).toBe("degraded");
+    expect(body.critical).toBe(false);
+    expect(body.feeds["players"]).toBe("failed");
+    expect(body.feeds["store"]).toBe("skipped");
+  });
+
+  test("mixed outcomes: one critical feed makes the whole response 503", async () => {
+    airtableShouldFail = true;
+    storedRowsByKey = {
+      "production:players": rowExpiringAt(Date.parse("2026-09-11T14:30:00.000Z"), NOW),
+      "production:store": null,
+    };
+    const { status, body } = await severity(await postAt(NOW));
+    expect(status).toBe(503);
+    expect(body.critical).toBe(true);
+    expect(body.feeds["players"]).toBe("failed");
+    expect(body.feeds["store"]).toBe("failed");
+  });
+
+  test("severity assessment never publishes, mutates or serves the cached payload", async () => {
+    airtableShouldFail = true;
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    const snapshot = JSON.stringify(storedRow);
+    const res = await postAt(NOW);
+    const text = await res.text();
+    expect(calls.some((c) => c.fn === "h2_finish_refresh")).toBe(false);
+    expect(JSON.stringify(storedRow)).toBe(snapshot);
+    expect(text).not.toContain("old");
+  });
+});
+
+describe("sanitized scheduled failure diagnostics", () => {
+  const logs: unknown[] = [];
+  let savedError: typeof console.error;
+
+  function captureLogs() {
+    logs.length = 0;
+    savedError = console.error;
+    console.error = (value: unknown) => {
+      logs.push(value);
+    };
+  }
+
+  function warmFailureLines(): Array<Record<string, unknown>> {
+    return logs
+      .filter(
+        (l): l is Record<string, unknown> =>
+          !!l && typeof l === "object" && (l as { event?: string }).event === "scheduled_warm_failure",
+      )
+      .map((l) => ({ ...l }));
+  }
+
+  afterEach(() => {
+    console.error = savedError;
+  });
+
+  test("an upstream warm failure logs exactly one bounded sanitized line per feed", async () => {
+    airtableShouldFail = true;
+    captureLogs();
+    expect(await warmPublicFeed("players", loader)).toBe("published");
+    const clean = warmFailureLines();
+    expect(clean.length).toBe(0);
+
+    logs.length = 0;
+    loadShouldFail = true;
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    const lines = warmFailureLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0]!["feed"]).toBe("players");
+    expect(lines[0]!["phase"]).toBe("refresh");
+    expect(typeof lines[0]!["at"]).toBe("string");
+    expect(Object.keys(lines[0]!).sort()).toEqual([
+      "at",
+      "category",
+      "event",
+      "feed",
+      "phase",
+      "ref",
+      "status",
+      "timeout",
+    ]);
+  });
+
+  test("the empty-Players fallback still logs the original failure once", async () => {
+    loaderPayload = [];
+    storedRow = freshStoredRow(300_000);
+    captureLogs();
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    const lines = warmFailureLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0]!["feed"]).toBe("players");
+  });
+
+  test("a claim RPC timeout is classified as timeout, a network rejection as network", async () => {
+    for (const [name, category] of [
+      ["TimeoutError", "timeout"],
+      ["TypeError", "network"],
+    ] as const) {
+      claimRejectName = name;
+      captureLogs();
+      expect(await warmPublicFeed("store", loader)).toBe("failed");
+      const lines = warmFailureLines();
+      expect(lines.length).toBe(1);
+      expect(lines[0]!["phase"]).toBe("claim");
+      expect(lines[0]!["category"]).toBe(category);
+      expect(lines[0]!["timeout"]).toBe(category === "timeout");
+      console.error = savedError;
+    }
+  });
+
+  test("an Airtable 5xx carries its numeric status without any upstream text", async () => {
+    const saved = [process.env["LOVABLE_API_KEY"], process.env["AIRTABLE_API_KEY"]];
+    process.env["LOVABLE_API_KEY"] = "dummy-lovable";
+    process.env["AIRTABLE_API_KEY"] = "dummy-airtable";
+    airtableStatus = 500;
+    captureLogs();
+    try {
+      const outcome = await warmPublicFeed("players", async () => {
+        const { listAirtableRecords } = await import("../src/lib/airtable.server");
+        return listAirtableRecords("tblTest");
+      });
+      expect(outcome).toBe("failed");
+      const lines = warmFailureLines();
+      expect(lines.length).toBe(1);
+      expect(lines[0]!["status"]).toBe(500);
+      expect(lines[0]!["category"]).toBe("upstream-http");
+      expect(JSON.stringify(logs)).not.toContain(SENSITIVE);
+      expect(JSON.stringify(logs)).not.toContain("internal.test");
+    } finally {
+      console.error = savedError;
+      if (saved[0] === undefined) delete process.env["LOVABLE_API_KEY"];
+      else process.env["LOVABLE_API_KEY"] = saved[0];
+      if (saved[1] === undefined) delete process.env["AIRTABLE_API_KEY"];
+      else process.env["AIRTABLE_API_KEY"] = saved[1];
+    }
+  });
+
+  test("no sensitive detail is logged even when the error carries secrets", async () => {
+    loadShouldFail = true;
+    loaderError = Object.assign(new Error(SENSITIVE), {
+      cause: new Error(SENSITIVE),
+      headers: { authorization: SENSITIVE },
+      params: { p_lease_token: SENSITIVE },
+      payload: [{ secret: SENSITIVE }],
+    });
+    captureLogs();
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    expect(JSON.stringify(warmFailureLines())).not.toContain(SENSITIVE);
+    expect(JSON.stringify(warmFailureLines())).not.toContain("internal.test");
+    expect(warmFailureLines().length).toBe(1);
+  });
+
+  test("a failing logging sink never changes the warm outcome", async () => {
+    loadShouldFail = true;
+    savedError = console.error;
+    console.error = () => {
+      throw new Error(SENSITIVE);
+    };
+    try {
+      expect(await warmPublicFeed("players", loader)).toBe("failed");
+    } finally {
+      console.error = savedError;
+    }
   });
 });
