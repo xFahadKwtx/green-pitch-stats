@@ -10,8 +10,11 @@
  * - The work is fully awaited so the scheduler's HTTP call reflects the real
  *   outcome, and it reuses the existing Airtable fetchers plus the existing
  *   lease/permit/budget/pacing/cooldown/deadline/TTL machinery unchanged.
- * - Any feed reporting `failed` yields HTTP 503 so a scheduler-side HTTP check
- *   can tell a real failure from a valid skip (`fresh`/`busy`, still 200).
+ * - HTTP severity: a `failed` feed only yields 503 when it could actually go
+ *   cold. If every failed feed demonstrably stays fresh strictly beyond the NEXT
+ *   real 12-minute schedule boundary plus a 60s margin, the response is 200 with
+ *   `status: "degraded"`, `critical: false`; otherwise 503 with `critical: true`.
+ *   Valid skips (`fresh`/`busy`) stay 200. Per-feed outcome strings are retained.
  */
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -20,12 +23,37 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 } as const;
 
+/** Real cron schedule: minutes 0,12,24,36,48 of every UTC hour. */
+export const SCHEDULE_MINUTES = [0, 12, 24, 36, 48] as const;
+/** Safety margin added on top of the next boundary. */
+export const SCHEDULE_MARGIN_MS = 60_000;
+
+/**
+ * The next actual UTC wall-clock schedule boundary strictly AFTER `atMs`.
+ * Derived from real minutes/hours, never from "12 minutes after now".
+ */
+export function nextScheduleBoundaryMs(atMs: number): number {
+  const at = new Date(atMs);
+  const base = Date.UTC(
+    at.getUTCFullYear(),
+    at.getUTCMonth(),
+    at.getUTCDate(),
+    at.getUTCHours(),
+  );
+  for (const minute of SCHEDULE_MINUTES) {
+    const candidate = base + minute * 60_000;
+    if (candidate > atMs) return candidate;
+  }
+  // Past the last boundary of this hour: the first boundary of the next hour.
+  return base + 3_600_000;
+}
+
 function json(body: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
 async function warmProductionFeeds(): Promise<Response> {
-  const { warmPublicFeed, environmentKey } = await import(
+  const { warmPublicFeed, environmentKey, assessCachedCoverage } = await import(
     "@/lib/public-feed-cache.server"
   );
 
@@ -47,11 +75,42 @@ async function warmProductionFeeds(): Promise<Response> {
     return fetchStoreFromAirtable();
   });
 
-  const failed = players === "failed" || store === "failed";
-  return json(
-    { status: failed ? "degraded" : "ok", feeds: { players, store } },
-    failed ? 503 : 200,
-  );
+  const feeds = { players, store } as const;
+  const failedFeeds = (["players", "store"] as const).filter((f) => feeds[f] === "failed");
+  if (failedFeeds.length === 0) {
+    return json({ status: "ok", feeds, critical: false }, 200);
+  }
+
+  // Severity assessment only: read-only, no payload is served, nothing is
+  // mutated and no refresh or retry is started here.
+  let critical = false;
+  let assessedAtMs = 0;
+  const expiries: number[] = [];
+  for (const feed of failedFeeds) {
+    let coverage: { expiresAtMs: number; assessedAtMs: number } | null = null;
+    try {
+      coverage = await assessCachedCoverage(feed, "production");
+    } catch {
+      coverage = null;
+    }
+    // Missing, expired, malformed, unknown or unreadable cache => critical.
+    if (!coverage) {
+      critical = true;
+      break;
+    }
+    expiries.push(coverage.expiresAtMs);
+    // The LATEST assessment time wins, so a slow second lookup can only move
+    // the boundary forward — an earlier read is never trusted past it.
+    assessedAtMs = Math.max(assessedAtMs, coverage.assessedAtMs);
+  }
+
+  if (!critical) {
+    const requiredUntil = nextScheduleBoundaryMs(assessedAtMs) + SCHEDULE_MARGIN_MS;
+    // STRICTLY beyond: equality is insufficient coverage.
+    critical = !expiries.every((expiresAtMs) => expiresAtMs > requiredUntil);
+  }
+
+  return json({ status: "degraded", feeds, critical }, critical ? 503 : 200);
 }
 
 /** Exported for focused tests; the route handler below is the only caller. */
