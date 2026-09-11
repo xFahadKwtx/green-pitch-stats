@@ -90,6 +90,7 @@ export type Database = {
         Args: { p_cache_key: string; p_lease_token: string; p_sequence: number }
         Returns: Json
       }
+      h2_verify_warm_token: { Args: { p_token: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never
