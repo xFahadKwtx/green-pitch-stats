@@ -10,6 +10,8 @@
  * - The work is fully awaited so the scheduler's HTTP call reflects the real
  *   outcome, and it reuses the existing Airtable fetchers plus the existing
  *   lease/permit/budget/pacing/cooldown/deadline/TTL machinery unchanged.
+ * - Any feed reporting `failed` yields HTTP 503 so a scheduler-side HTTP check
+ *   can tell a real failure from a valid skip (`fresh`/`busy`, still 200).
  */
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -45,32 +47,39 @@ async function warmProductionFeeds(): Promise<Response> {
     return fetchStoreFromAirtable();
   });
 
-  return json({ status: "ok", feeds: { players, store } }, 200);
+  const failed = players === "failed" || store === "failed";
+  return json(
+    { status: failed ? "degraded" : "ok", feeds: { players, store } },
+    failed ? 503 : 200,
+  );
+}
+
+/** Exported for focused tests; the route handler below is the only caller. */
+export async function handleWarmFeedsRequest(request: Request): Promise<Response> {
+  const token = request.headers.get("x-warm-token");
+  if (!token) return json({ status: "denied" }, 401);
+
+  let authorized = false;
+  try {
+    const { verifyWarmToken } = await import("@/lib/public-feed-cache.server");
+    authorized = await verifyWarmToken(token);
+  } catch {
+    // Coordinator unavailable: fail closed, reveal nothing.
+    return json({ status: "unavailable" }, 503);
+  }
+  if (!authorized) return json({ status: "denied" }, 401);
+
+  try {
+    return await warmProductionFeeds();
+  } catch {
+    return json({ status: "unavailable" }, 503);
+  }
 }
 
 export const Route = createFileRoute("/api/public/warm-feeds")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
-        const token = request.headers.get("x-warm-token");
-        if (!token) return json({ status: "denied" }, 401);
-
-        let authorized = false;
-        try {
-          const { verifyWarmToken } = await import("@/lib/public-feed-cache.server");
-          authorized = await verifyWarmToken(token);
-        } catch {
-          // Coordinator unavailable: fail closed, reveal nothing.
-          return json({ status: "unavailable" }, 503);
-        }
-        if (!authorized) return json({ status: "denied" }, 401);
-
-        try {
-          return await warmProductionFeeds();
-        } catch {
-          return json({ status: "unavailable" }, 503);
-        }
-      },
+      POST: async ({ request }) => handleWarmFeedsRequest(request),
       GET: async () => json({ status: "method_not_allowed" }, 405),
     },
   },
