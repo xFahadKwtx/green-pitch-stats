@@ -25,6 +25,8 @@ process.env["SUPABASE_SERVICE_ROLE_KEY"] = "sb_secret_dummy_test_value";
 
 const VALID_TOKEN = "a".repeat(64);
 const TICK_MS = 600_000;
+/** Stands in for an upstream body that must never reach a log line. */
+const SENSITIVE = "SECRET_TOKEN_https://user:pass@internal.test/db?key=leaked";
 
 interface Call {
   fn: string;
@@ -36,6 +38,8 @@ interface StoredRow {
   payload: unknown[];
   refresh_started_at: string;
   fresh_until: string;
+  /** Server clock reported by the lookup response for this row. */
+  dateMs?: number;
 }
 
 let calls: Call[] = [];
@@ -48,8 +52,16 @@ let loadShouldFail: boolean;
 let loaderPayload: unknown[];
 let storedRow: StoredRow | null;
 let storedRowSnapshot: string | null;
+/** Per-cache-key stored rows for severity assessment (falls back to storedRow). */
+let storedRowsByKey: Record<string, StoredRow | null> | null;
 let airtableCalls: number;
 let airtableShouldFail: boolean;
+/** Airtable HTTP failure status (non-429) for the diagnostics tests. */
+let airtableStatus: number | null;
+/** When set, the warming claim RPC rejects with this error name. */
+let claimRejectName: string | null;
+/** Per-cache-key claim status override for mixed-outcome tests. */
+let claimStatusByKey: Record<string, string> | null;
 let realFetch: typeof fetch;
 
 function freshStoredRow(remainingMs: number): StoredRow {
@@ -79,21 +91,32 @@ function install() {
     if (!url.startsWith("http://coordinator.test")) {
       airtableCalls += 1;
       if (airtableShouldFail) throw new Error("upstream unreachable");
+      if (airtableStatus !== null) {
+        return new Response(SENSITIVE, {
+          status: airtableStatus,
+          headers: { "content-type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ records: [] }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }
 
-    // Read-only stored-payload lookup used by the empty-overwrite protection.
+    // Read-only stored-payload lookup used by the empty-overwrite protection
+    // and by the endpoint's read-only severity assessment.
     if (url.includes("/rest/v1/airtable_public_cache")) {
-      calls.push({ fn: "select_cache", args: {} });
-      return new Response(JSON.stringify(storedRow ? [storedRow] : []), {
+      const cacheKey = decodeURIComponent(
+        /cache_key=eq\.([^&]*)/.exec(url)?.[1] ?? "",
+      );
+      calls.push({ fn: "select_cache", args: { cacheKey } });
+      const row = storedRowsByKey ? (storedRowsByKey[cacheKey] ?? null) : storedRow;
+      return new Response(JSON.stringify(row ? [row] : []), {
         status: 200,
         headers: {
           "content-type": "application/json",
           // Server Date is required for the freshness derivation.
-          date: new Date().toUTCString(),
+          date: new Date(row?.dateMs ?? Date.now()).toUTCString(),
         },
       });
     }
@@ -102,18 +125,26 @@ function install() {
     const args = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     calls.push({ fn, args });
 
+    if (fn === "h2_get_or_claim_ahead" && claimRejectName) {
+      const error = new Error("coordinator transport failure");
+      error.name = claimRejectName;
+      throw error;
+    }
+
     let body: unknown;
     if (fn === "h2_verify_warm_token") {
       body = { authorized: args["p_token"] === VALID_TOKEN };
     } else if (fn === "h2_get_or_claim_ahead" || fn === "h2_get_or_claim") {
       // Mirror the SQL freshness comparison when a remaining lifetime is set.
       const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
+      const perKey = claimStatusByKey?.[String(args["p_cache_key"] ?? "")];
       const effective =
-        cacheRemainingMs === null
+        perKey ??
+        (cacheRemainingMs === null
           ? claimStatus
           : cacheRemainingMs > minFresh
             ? "fresh"
-            : "claimed";
+            : "claimed");
       body =
         effective === "claimed"
           ? {
@@ -181,8 +212,12 @@ beforeEach(() => {
   loaderPayload = [{ id: "p001" }];
   storedRow = null;
   storedRowSnapshot = null;
+  storedRowsByKey = null;
   airtableCalls = 0;
   airtableShouldFail = false;
+  airtableStatus = null;
+  claimRejectName = null;
+  claimStatusByKey = null;
   __testing.setMode("production");
   install();
 });
@@ -438,10 +473,31 @@ describe("warming endpoint authorization and status codes", () => {
     claimStatus = "fresh";
     const res = await post();
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; feeds: Record<string, string> };
+    const body = (await res.json()) as {
+      status: string;
+      critical: boolean;
+      feeds: Record<string, string>;
+    };
     expect(body.status).toBe("ok");
+    expect(body.critical).toBe(false);
     expect(body.feeds["players"]).toBe("skipped");
     expect(body.feeds["store"]).toBe("skipped");
+    // No severity lookup is needed when nothing failed.
+    expect(calls.some((c) => c.fn === "select_cache")).toBe(false);
+  });
+
+  test("published feeds return 200 ok", async () => {
+    const res = await post();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      critical: boolean;
+      feeds: Record<string, string>;
+    };
+    expect(body.status).toBe("ok");
+    expect(body.critical).toBe(false);
+    expect(body.feeds["players"]).toBe("published");
+    expect(body.feeds["store"]).toBe("published");
   });
 
   test("a failed feed returns 503 instead of a top-level ok 200", async () => {

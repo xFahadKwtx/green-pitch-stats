@@ -24,6 +24,8 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { logScheduledWarmFailure, type WarmPhase } from "./server-diagnostics.server";
+
 /** Bump when a public feed payload shape changes (invalidates cached rows). */
 export const SCHEMA_VERSION = 1;
 
@@ -99,14 +101,44 @@ export type FeedName = "players" | "records" | "store" | "upcoming-games";
 
 export type EnvironmentKey = "preview" | "production";
 
-/** Sanitized, visitor-safe failure. Never carries upstream detail. */
+/** Coarse, allowlisted failure kinds. Diagnostics metadata only. */
+export type FailureKind =
+  | "timeout"
+  | "network"
+  | "upstream-http"
+  | "invalid-response"
+  | "unknown";
+
+/**
+ * Sanitized, visitor-safe failure. Never carries upstream detail. The optional
+ * `kind`/`status` fields are bounded diagnostics metadata (no text, no URL, no
+ * headers) so a later log line can distinguish timeout vs network vs HTTP.
+ */
 export class FeedUnavailableError extends Error {
   readonly reason: string;
-  constructor(reason: string) {
+  readonly kind?: FailureKind;
+  readonly status?: number;
+  constructor(reason: string, meta?: { kind?: FailureKind; status?: number }) {
     super("This information is temporarily unavailable. Please try again shortly.");
     this.name = "FeedUnavailableError";
     this.reason = reason;
+    if (meta?.kind) this.kind = meta.kind;
+    if (typeof meta?.status === "number" && Number.isInteger(meta.status)) {
+      this.status = meta.status;
+    }
   }
+}
+
+/** Coarse classification of a transport rejection. No error text is retained. */
+export function classifyTransportError(error: unknown): FailureKind {
+  try {
+    const name = error && typeof error === "object" ? (error as { name?: unknown }).name : null;
+    if (name === "TimeoutError" || name === "AbortError") return "timeout";
+    if (name === "TypeError") return "network";
+  } catch {
+    // Hostile accessors are untrusted; fall through.
+  }
+  return "network";
 }
 
 /** Thrown by the Airtable layer when Airtable answers 429. */
@@ -244,30 +276,47 @@ async function rpc(fn: string, args: Json, extraSignal?: AbortSignal): Promise<J
       body: JSON.stringify(args),
       signal,
     });
-  } catch {
-    throw new FeedUnavailableError(`coordinator unreachable (${fn})`);
+  } catch (error) {
+    // Behaviour unchanged (fail closed, no retry). Only bounded metadata is
+    // preserved so timeout and network are distinguishable in diagnostics.
+    throw new FeedUnavailableError(`coordinator unreachable (${fn})`, {
+      kind: classifyTransportError(error),
+    });
   }
 
 
   if (!response.ok) {
     // Upstream error bodies are intentionally discarded.
-    throw new FeedUnavailableError(`coordinator rejected ${fn} (${response.status})`);
+    throw new FeedUnavailableError(`coordinator rejected ${fn} (${response.status})`, {
+      kind: "upstream-http",
+      status: response.status,
+    });
   }
 
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    throw new FeedUnavailableError(`coordinator returned an unreadable result (${fn})`);
+    throw new FeedUnavailableError(`coordinator returned an unreadable result (${fn})`, {
+      kind: "invalid-response",
+    });
   }
   if (body && typeof body === "object" && !Array.isArray(body)) return body as Json;
-  throw new FeedUnavailableError(`coordinator returned an unexpected result (${fn})`);
+  throw new FeedUnavailableError(`coordinator returned an unexpected result (${fn})`, {
+    kind: "invalid-response",
+  });
 }
 
 interface StoredArrayPayload {
   payload: unknown[];
   /** Local monotonic deadline derived from the stored authoritative timestamps. */
   freshUntil: number;
+  /** Conservative absolute UTC ms at which the entry stops being fresh. */
+  expiresAtMs: number;
+  /** Conservative server wall clock (ms) for the moment of the read. */
+  checkedAtMs: number;
+  /** Local monotonic reading taken BEFORE the lookup request. */
+  readAtMonotonic: number;
 }
 
 /** Read-only lookup. Expired entries are retained only for empty-overwrite protection. */
@@ -307,7 +356,13 @@ async function readStoredArrayPayload(cacheKey: string): Promise<StoredArrayPayl
       Number.isFinite(checkedAt) && started <= checkedAt && until > started
       ? beforeRead + expires - checkedAt
       : NaN;
-    return { payload, freshUntil };
+    return {
+      payload,
+      freshUntil,
+      expiresAtMs: expires,
+      checkedAtMs: checkedAt,
+      readAtMonotonic: beforeRead,
+    };
   } catch {
     // Upstream bodies/errors are never logged or surfaced.
     return null;
@@ -316,6 +371,32 @@ async function readStoredArrayPayload(cacheKey: string): Promise<StoredArrayPayl
 
 function isStoredPayloadFresh(stored: StoredArrayPayload): boolean {
   return Number.isFinite(stored.freshUntil) && monotonic() < stored.freshUntil;
+}
+
+/** How long a still-valid cached entry demonstrably remains fresh. */
+export interface CachedCoverage {
+  /** Conservative absolute UTC ms at which freshness ends. */
+  expiresAtMs: number;
+  /** Conservative server wall clock (ms) at the moment of this assessment. */
+  assessedAtMs: number;
+}
+
+/**
+ * Read-only severity input for the scheduled warmer. Returns null whenever the
+ * stored entry is missing, empty, malformed, unreadable or already expired —
+ * never serves a payload, never mutates, never triggers a refresh.
+ */
+export async function assessCachedCoverage(
+  feed: FeedName,
+  env: EnvironmentKey = "production",
+): Promise<CachedCoverage | null> {
+  const stored = await readStoredArrayPayload(cacheKeyFor(feed, env));
+  if (!stored || !isStoredPayloadFresh(stored)) return null;
+  if (!Number.isFinite(stored.expiresAtMs) || !Number.isFinite(stored.checkedAtMs)) return null;
+  // Monotonic recheck: the read latency and any elapsed assessment time push
+  // the assessment moment forward, never backward.
+  const elapsed = Math.max(0, monotonic() - stored.readAtMonotonic);
+  return { expiresAtMs: stored.expiresAtMs, assessedAtMs: stored.checkedAtMs + elapsed };
 }
 
 /**
@@ -534,36 +615,65 @@ export async function warmPublicFeed<T>(
   const localKey = `${cacheKey}:warm:${SCHEMA_VERSION}`;
   if (refreshAhead.has(localKey)) return "skipped";
 
+  // Exactly one sanitized log line per failed warming attempt.
+  let logged = false;
+  const logOnce = (phase: WarmPhase, error?: unknown) => {
+    if (logged) return;
+    logged = true;
+    void logScheduledWarmFailure(feed, phase, error);
+  };
+
   const attempt = (async (): Promise<WarmOutcome> => {
     const beforeRpc = monotonic();
-    const result = await rpc("h2_get_or_claim_ahead", {
-      p_cache_key: cacheKey,
-      p_schema_version: SCHEMA_VERSION,
-      p_min_fresh_ms: WARM_MIN_FRESH_MS,
-    });
+    let result: Json;
+    try {
+      result = await rpc("h2_get_or_claim_ahead", {
+        p_cache_key: cacheKey,
+        p_schema_version: SCHEMA_VERSION,
+        p_min_fresh_ms: WARM_MIN_FRESH_MS,
+      });
+    } catch (error) {
+      logOnce("claim", error);
+      throw error;
+    }
     const status = String(result["status"] ?? "");
     if (status !== "claimed") {
       // Recognized coordinator denials are legitimate skips; anything else is
       // an unexpected/unknown answer and must surface as a failure.
-      return COORDINATOR_DENIALS.has(status) ? "skipped" : "failed";
+      if (COORDINATOR_DENIALS.has(status)) return "skipped";
+      logOnce("claim");
+      return "failed";
     }
     const token = String(result["lease_token"] ?? "");
-    if (!token) return "failed";
+    if (!token) {
+      logOnce("claim");
+      return "failed";
+    }
     const remaining = Number(result["refresh_deadline_ms"] ?? 0);
     const budget = Math.min(Number.isFinite(remaining) ? remaining : 0, REFRESH_DEADLINE_MS);
-    if (budget <= 0) return "failed";
+    if (budget <= 0) {
+      logOnce("claim");
+      return "failed";
+    }
 
     const published = { value: false };
     try {
-      await runRefresh(cacheKey, feed, token, beforeRpc + budget, load, published);
+      await runRefresh(cacheKey, feed, token, beforeRpc + budget, load, published, (error) =>
+        logOnce("refresh", error),
+      );
     } catch {
-      // Sanitized: upstream detail is never surfaced or logged here.
+      // Sanitized: upstream detail is never surfaced here.
     }
-    return published.value ? "published" : "failed";
+    if (published.value) return "published";
+    logOnce("refresh");
+    return "failed";
   })();
 
   const tracked = attempt
-    .catch((): WarmOutcome => "failed")
+    .catch((): WarmOutcome => {
+      logOnce("refresh");
+      return "failed";
+    })
     .finally(() => {
       refreshAhead.delete(localKey);
     });
@@ -580,6 +690,12 @@ async function runRefresh<T>(
   load: () => Promise<T>,
   /** Set only when the coordinator accepted a complete new payload. */
   published?: { value: boolean },
+  /**
+   * Diagnostics-only observer of the ORIGINAL failure, invoked before the error
+   * is converted and before any previous-payload fallback. Must never throw and
+   * never affects behaviour.
+   */
+  onFailure?: (error: unknown) => void,
 ): Promise<T> {
 
   const controller = new AbortController();
@@ -605,6 +721,13 @@ async function runRefresh<T>(
   }
 
   const abandon = async (error: unknown, previous: StoredArrayPayload | null): Promise<T> => {
+    // Observe the ORIGINAL error first: below it is converted, and a still-fresh
+    // previous payload may be returned instead, after which the cause is lost.
+    try {
+      onFailure?.(error);
+    } catch {
+      // Diagnostics must never influence the refresh outcome.
+    }
     ctx.failed = true;
     controller.abort();
     const rateLimited = error instanceof AirtableRateLimitError;

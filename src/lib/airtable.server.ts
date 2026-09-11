@@ -154,8 +154,12 @@ export async function listAirtableRecords(
         }
 
         if (!response.ok) {
-          // Upstream bodies are never logged or stored.
-          throw new Error(`Airtable request failed [${response.status}]`);
+          // Upstream bodies are never logged or stored. The numeric status is
+          // carried as bounded metadata at the origin so diagnostics never have
+          // to parse error text.
+          throw Object.assign(new Error(`Airtable request failed [${response.status}]`), {
+            status: response.status,
+          });
         }
 
         let body: unknown;
