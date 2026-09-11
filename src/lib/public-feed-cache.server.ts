@@ -111,8 +111,26 @@ let modeOverride: string | undefined;
 /** Per-instance in-flight coalescing: env + feed + schema version. */
 const inFlight = new Map<string, Promise<unknown>>();
 
+/** Per-instance refresh-ahead tracking: at most one background attempt per key. */
+const refreshAhead = new Map<string, Promise<unknown>>();
+
+let refreshAheadEnabled = true;
+
 /** Test-only seams. Never used by production code paths. */
 export const __testing = {
+  setRefreshAhead(enabled: boolean) {
+    refreshAheadEnabled = enabled;
+  },
+  resetRefreshAhead() {
+    refreshAheadEnabled = true;
+  },
+  refreshAheadSize: () => refreshAhead.size,
+  /** Awaits every pending background refresh so tests stay deterministic. */
+  settleRefreshAhead: async () => {
+    while (refreshAhead.size > 0) {
+      await Promise.allSettled([...refreshAhead.values()]);
+    }
+  },
   setSleep(fn: (ms: number) => Promise<void>) {
     sleepImpl = fn;
   },
