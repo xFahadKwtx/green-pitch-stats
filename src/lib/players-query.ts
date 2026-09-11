@@ -7,5 +7,5 @@ import { getPlayers } from "./players.functions";
 export const playersQueryOptions = queryOptions<Player[]>({
   queryKey: ["players"],
   queryFn: () => getPlayers(),
-  staleTime: 60_000,
+  staleTime: 900_000,
 });
