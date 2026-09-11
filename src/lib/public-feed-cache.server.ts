@@ -354,6 +354,13 @@ async function servePublicFeed<T>(
         freshForMs > 0 &&
         monotonic() < beforeRpc + freshForMs
       ) {
+        // Refresh ahead: still fresh, but close to expiry. The visitor gets this
+        // fresh payload now; a single background attempt goes through the exact
+        // same lease/permit coordination. A failure there changes nothing about
+        // this payload's remaining validity.
+        if (freshForMs <= REFRESH_AHEAD_WINDOW_MS) {
+          await scheduleRefreshAhead(cacheKey, feed, load);
+        }
         return result["payload"] as T;
       }
 
