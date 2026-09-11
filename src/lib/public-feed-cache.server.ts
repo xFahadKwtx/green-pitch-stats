@@ -255,10 +255,7 @@ function isStoredPayloadFresh(stored: StoredArrayPayload): boolean {
 
 /**
  * A concurrent refresh may have published since the claim RPC. Serve that
- * stored payload while it is still fresh. If refreshing is not possible right
- * now (busy/backoff/cooldown/budget), serve the last known NON-EMPTY payload
- * even when expired, so a temporary coordinator/upstream problem degrades to
- * slightly stale data instead of a blank page. A cold cache still fails closed.
+ * stored payload only while it is still fresh; never extend its hard TTL.
  */
 async function serveFreshStoredOrFail<T>(
   cacheKey: string,
@@ -266,10 +263,9 @@ async function serveFreshStoredOrFail<T>(
 ): Promise<T> {
   const stored = await readStoredArrayPayload(cacheKey);
   if (stored && isStoredPayloadFresh(stored)) return stored.payload as T;
-  // readStoredArrayPayload only returns non-empty arrays.
-  if (stored) return stored.payload as T;
   throw new FeedUnavailableError(reason);
 }
+
 
 
 
