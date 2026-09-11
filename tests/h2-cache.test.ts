@@ -565,6 +565,9 @@ beforeEach(() => {
   world.control.enabled = true;
   installFetch();
   __testing.setMode("production");
+  // Refresh ahead is exercised in its own describe block; the coordination and
+  // strict-expiry suites assert on exact upstream/RPC traffic.
+  __testing.setRefreshAhead(false);
   // Virtual clock: sleeps advance the fake DB clock instantly, and the client's
   // monotonic seam reads the same fake clock.
   __testing.setSleep(async (ms: number) => {
@@ -580,6 +583,7 @@ afterEach(() => {
   __testing.resetSleep();
   __testing.resetMonotonic();
   __testing.setMode(undefined);
+  __testing.resetRefreshAhead();
 });
 
 

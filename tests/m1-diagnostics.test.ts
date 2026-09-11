@@ -257,6 +257,7 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
   let innerValue: unknown;
   let loadCalls = 0;
   __testing.setMode("production");
+  __testing.setRefreshAhead(false);
   __testing.setMonotonic(() => now);
   __testing.setSleep(async ms => { now += ms; });
   console.error = value => {
@@ -325,6 +326,7 @@ async function exerciseCache(feed: FeedName, scenario: Scenario, wrapped: boolea
     __testing.resetSleep();
     __testing.resetMonotonic();
     __testing.setMode(undefined);
+    __testing.resetRefreshAhead();
     envNames.forEach((key, i) => {
       if (savedEnv[i] === undefined) delete process.env[key];
       else process.env[key] = savedEnv[i];

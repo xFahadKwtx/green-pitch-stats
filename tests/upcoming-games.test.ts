@@ -274,7 +274,7 @@ async function coordinator(status: string, payload: Match[], run: (calls: Array<
   const saved = keys.map(key => process.env[key]);
   process.env.SUPABASE_URL = "https://m8-coordinator.test";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test_only";
-  __testing.setMode("production"); __testing.setMonotonic(() => now); __testing.setSleep(async () => {});
+  __testing.setMode("production"); __testing.setRefreshAhead(false); __testing.setMonotonic(() => now); __testing.setSleep(async () => {});
   const calls: Array<{ operation: string; body: any }> = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -293,7 +293,7 @@ async function coordinator(status: string, payload: Match[], run: (calls: Array<
   }) as typeof fetch;
   try { await run(calls); expect(__testing.inFlightSize()).toBe(0); }
   finally {
-    globalThis.fetch = blockedFetch; __testing.setMode(undefined); __testing.resetMonotonic(); __testing.resetSleep();
+    globalThis.fetch = blockedFetch; __testing.setMode(undefined); __testing.resetRefreshAhead(); __testing.resetMonotonic(); __testing.resetSleep();
     keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
   }
 }
