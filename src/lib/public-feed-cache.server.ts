@@ -481,6 +481,78 @@ async function backgroundRefresh<T>(
   await runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
 }
 
+/**
+ * Confirms an internal warming request against the coordinator. The shared
+ * secret lives only in the database vault; no credential is read, embedded or
+ * logged here. Any coordinator problem fails closed (throws).
+ */
+export async function verifyWarmToken(token: string): Promise<boolean> {
+  const result = await rpc("h2_verify_warm_token", { p_token: token });
+  return result["authorized"] === true;
+}
+
+/**
+ * Scheduled warming for ONE feed. Production + players/store only.
+ *
+ * Uses exactly the same claim/lease/permit/publish machinery as a visitor
+ * refresh, only with the wider warming freshness threshold. Never serves data,
+ * never throws, and reports `published` only when the coordinator actually
+ * accepted a complete new payload — a stale/previous-payload fallback reports
+ * `failed`.
+ */
+export async function warmPublicFeed<T>(
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<WarmOutcome> {
+  if (!WARM_FEEDS.has(feed)) return "skipped";
+  let cacheKey: string;
+  try {
+    if (environmentKey() !== "production") return "skipped";
+    cacheKey = cacheKeyFor(feed, "production");
+  } catch {
+    return "skipped";
+  }
+
+  // At most one warming attempt per feed per instance; the feed's own lease is
+  // the cross-instance authority.
+  const localKey = `${cacheKey}:warm:${SCHEMA_VERSION}`;
+  if (refreshAhead.has(localKey)) return "skipped";
+
+  const attempt = (async (): Promise<WarmOutcome> => {
+    const beforeRpc = monotonic();
+    const result = await rpc("h2_get_or_claim_ahead", {
+      p_cache_key: cacheKey,
+      p_schema_version: SCHEMA_VERSION,
+      p_min_fresh_ms: WARM_MIN_FRESH_MS,
+    });
+    // fresh / busy / backoff / cooldown / budget_exhausted / disabled: nothing
+    // to do, and no protection is bypassed.
+    if (String(result["status"] ?? "") !== "claimed") return "skipped";
+    const token = String(result["lease_token"] ?? "");
+    if (!token) return "failed";
+    const remaining = Number(result["refresh_deadline_ms"] ?? 0);
+    const budget = Math.min(Number.isFinite(remaining) ? remaining : 0, REFRESH_DEADLINE_MS);
+    if (budget <= 0) return "failed";
+
+    const published = { value: false };
+    try {
+      await runRefresh(cacheKey, feed, token, beforeRpc + budget, load, published);
+    } catch {
+      // Sanitized: upstream detail is never surfaced or logged here.
+    }
+    return published.value ? "published" : "failed";
+  })();
+
+  const tracked = attempt
+    .catch((): WarmOutcome => "failed")
+    .finally(() => {
+      refreshAhead.delete(localKey);
+    });
+  refreshAhead.set(localKey, tracked);
+  return tracked;
+}
+
+
 async function runRefresh<T>(
   cacheKey: string,
   feed: FeedName,
