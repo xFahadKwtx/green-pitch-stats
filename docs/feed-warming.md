@@ -15,11 +15,36 @@ data is never served.
 - `src/routes/api/public/warm-feeds.ts` — POST-only internal endpoint. Requires
   the `x-warm-token` header, verified through `public.h2_verify_warm_token`.
   Production only, no request-provided overrides, sanitized JSON response:
-  `{"status":"ok","feeds":{"players":"published|skipped|failed","store":...}}`.
-  Any feed reporting `failed` returns HTTP 503 with `"status":"degraded"`;
-  valid skips (`fresh`, `busy`, cooldown/backoff/budget denials) return 200.
+  `{"status":"ok","feeds":{"players":"published|skipped|failed","store":...},
+  "critical":false}`.
+  Valid skips (`fresh`, `busy`, cooldown/backoff/budget denials) return 200.
   An unknown coordinator answer is reported as `failed`, not `skipped`, and a
   stale/previous-payload fallback can never be reported as `published`.
+- HTTP severity for `failed` feeds. After the awaited attempts, the endpoint
+  performs a read-only lookup of the still-valid cached entry of every failed
+  feed (no payload is served, nothing is mutated, no refresh is started). It
+  then computes the next ACTUAL UTC schedule boundary (minutes 00/12/24/36/48)
+  after the assessment moment, plus a 60s margin. If every failed feed remains
+  fresh strictly beyond that point, the answer is HTTP 200 with
+  `"status":"degraded"`, `"critical":false`. If any failed feed has no valid,
+  fresh, well-formed, readable cache, or its coverage does not strictly exceed
+  that point, the answer is HTTP 503 with `"critical":true`. The assessment uses
+  the conservative server clock from the lookup response and the LATEST
+  assessment time across feeds, so a slow second lookup that crosses a boundary
+  can only raise the requirement. Auth and coordinator failures still fail
+  closed (401/503). A 503 therefore means "a cache can actually go cold";
+  a 200 with `critical:false` still means a real refresh failed, so warming
+  never promises that a visitor pays nothing under repeated failures.
+- Sanitized failure diagnostics. Each failed warming attempt emits exactly one
+  bounded line, e.g.
+  `{"event":"scheduled_warm_failure","feed":"players","phase":"refresh",
+  "category":"upstream-http","status":500,"timeout":false,
+  "at":"2026-09-11T14:00:00.101Z","ref":"<uuid>"}`.
+  `category` is allowlisted (`timeout`, `network`, `upstream-http`,
+  `invalid-response`, `rate-limited`, `unavailable`, `unknown`) and the original
+  error is observed BEFORE it is converted or replaced by the previous-payload
+  fallback. No message, stack, URL, token, header, SQL argument, payload or
+  upstream body is ever logged, and a failing log sink cannot change a response.
 - `warmPublicFeed()` in `src/lib/public-feed-cache.server.ts` — claims through
   `h2_get_or_claim_ahead` with the wider warming window (`WARM_MIN_FRESH_MS`,
   660000 ms) and reuses the existing refresh machinery and Airtable fetchers.
