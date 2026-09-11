@@ -559,7 +559,10 @@ async function runRefresh<T>(
   leaseToken: string,
   deadlineAt: number,
   load: () => Promise<T>,
+  /** Set only when the coordinator accepted a complete new payload. */
+  published?: { value: boolean },
 ): Promise<T> {
+
   const controller = new AbortController();
   const ctx: RefreshContext = {
     cacheKey,
