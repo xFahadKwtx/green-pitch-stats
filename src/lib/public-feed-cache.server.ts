@@ -46,7 +46,7 @@ export const RPC_TIMEOUT_MS = 5_000;
  * though fresh data landed moments later), yet stay inside the 60s lease so a
  * waiting visitor never steals the owner's lease.
  */
-const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000] as const;
+const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 export const BUSY_RECHECK_ATTEMPTS = BUSY_RECHECK_DELAYS_MS.length;
 
 

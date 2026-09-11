@@ -42,7 +42,7 @@ const DAY_LIMIT = 2100;
 const MONTH_LIMIT = 65000;
 const LEASE_MS = 60_000;
 const DEADLINE_MS = 45_000;
-const PACING_MS = 2_000;
+const PACING_MS = 500;
 
 function utcDayStart(ms: number): number {
   const d = new Date(ms);
@@ -977,7 +977,7 @@ describe("pagination and permits", () => {
     expect(world.airtableRequests.length).toBe(0);
   });
 
-  test("10. pacing: grants are spaced 2s apart and dispatch waits for the window", async () => {
+  test("10. pacing: grants are spaced 500ms apart and dispatch waits for the window", async () => {
     seedFullBase();
     world.seedTable(AIRTABLE_TABLES.records, 250);
     await getCachedPublicFeed("records", listAll(AIRTABLE_TABLES.records));
