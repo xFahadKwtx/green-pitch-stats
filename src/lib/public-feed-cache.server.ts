@@ -46,8 +46,9 @@ export const RPC_TIMEOUT_MS = 5_000;
  * though fresh data lands moments later.
  */
 const BUSY_RECHECK_DELAYS_MS = [
-  1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000,
+  1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000,
 ] as const;
+
 
 /** Pacing waits are deadline-bounded; the floor bounds coordinator RPC churn. */
 const MIN_PACING_WAIT_MS = 250;
