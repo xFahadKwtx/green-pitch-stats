@@ -65,6 +65,7 @@ beforeEach(() => {
   process.env.AIRTABLE_API_KEY = "dummy-airtable-key";
   Date.now = () => now;
   __testing.setMode("production");
+  __testing.setRefreshAhead(false);
   __testing.setMonotonic(() => now);
   __testing.setSleep(async () => {});
   tables = new Map([[AIRTABLE_TABLES.playersDatabase, [[player()]]]]);
@@ -117,7 +118,7 @@ afterEach(() => {
   globalThis.fetch = savedFetch;
   console.error = savedConsole;
   Date.now = savedDateNow;
-  __testing.resetMonotonic(); __testing.resetSleep(); __testing.setMode(undefined);
+  __testing.resetMonotonic(); __testing.resetSleep(); __testing.setMode(undefined); __testing.resetRefreshAhead();
   keys.forEach((key, i) => { if (savedEnv[i] === undefined) delete process.env[key]; else process.env[key] = savedEnv[i]; });
   expect(__testing.inFlightSize()).toBe(0);
 });

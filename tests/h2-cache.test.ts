@@ -198,7 +198,7 @@ class FakeWorld {
     // Time consumed while the RPC is in flight (DB clock advances).
     this.advance(this.rpcAdvanceMs[fn] ?? 0);
 
-    if (fn === "h2_get_or_claim") return this.getOrClaim(args);
+    if (fn === "h2_get_or_claim" || fn === "h2_get_or_claim_ahead") return this.getOrClaim(args);
     if (fn === "h2_take_page_permit") return this.takePermit(args);
     if (fn === "h2_finish_refresh") return this.finish(args);
     if (fn === "h2_fail_refresh") return this.fail(args);
@@ -263,6 +263,11 @@ class FakeWorld {
 
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
+    // Mirrors the SQL refresh-ahead window: 0 for the plain entry point.
+    const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
+    if (!Number.isFinite(minFresh) || minFresh < 0 || minFresh > 120_000) {
+      throw new Error("invalid refresh-ahead window");
+    }
     if (Number(args["p_schema_version"]) !== 1) {
       throw new Error("unsupported schema version");
     }
@@ -272,7 +277,7 @@ class FakeWorld {
     if (
       row.payload !== null &&
       row.freshUntil !== null &&
-      row.freshUntil > this.now &&
+      row.freshUntil > this.now + minFresh &&
       row.schemaVersion === 1
     ) {
       return this.freshResponse(row);
@@ -565,6 +570,9 @@ beforeEach(() => {
   world.control.enabled = true;
   installFetch();
   __testing.setMode("production");
+  // Refresh ahead is exercised in its own describe block; the coordination and
+  // strict-expiry suites assert on exact upstream/RPC traffic.
+  __testing.setRefreshAhead(false);
   // Virtual clock: sleeps advance the fake DB clock instantly, and the client's
   // monotonic seam reads the same fake clock.
   __testing.setSleep(async (ms: number) => {
@@ -580,6 +588,7 @@ afterEach(() => {
   __testing.resetSleep();
   __testing.resetMonotonic();
   __testing.setMode(undefined);
+  __testing.resetRefreshAhead();
 });
 
 
@@ -2116,4 +2125,112 @@ describe("per-feed refresh leases with globally shared Airtable limits", () => {
     expect(world.rows.get(KEY_STORE)!.payload).toBeNull();
     expect(world.activeLeaseFeeds()).toEqual([]);
   });
+});
+
+describe("refresh ahead (Players and Store only)", () => {
+  beforeEach(() => {
+    __testing.setRefreshAhead(true);
+  });
+
+  /** A row that is still fresh with exactly `remainingMs` of its 900s TTL left. */
+  function seedFresh(feed: "players" | "store" | "records" | "upcoming-games", remainingMs: number) {
+    const row = world.rows.get(`production:${feed}`)!;
+    Object.assign(row, {
+      payload: [{ id: "cached-payload" }],
+      refreshStartedAt: world.now - (900_000 - remainingMs),
+      freshUntil: world.now + remainingMs,
+    });
+    return row;
+  }
+
+  const countingLoader = (state: { calls: number }, fail = false) => async () => {
+    state.calls++;
+    if (fail) throw new Error("upstream unavailable");
+    return listAirtableRecords(AIRTABLE_TABLES.records);
+  };
+
+  test("fresh outside the final 120s: no background refresh", async () => {
+    seedFullBase();
+    const row = seedFresh("players", 200_000);
+    const state = { calls: 0 };
+    expect(await getCachedPublicFeed("players", countingLoader(state))).toEqual(row.payload);
+    await __testing.settleRefreshAhead();
+    expect(state.calls).toBe(0);
+    expect(world.airtableRequests).toEqual([]);
+    expect(world.rpcCalls).toEqual(["h2_get_or_claim"]);
+    expect(world.activeLeaseFeeds()).toEqual([]);
+  });
+
+  for (const feed of ["players", "store"] as const) {
+    test(`${feed}: fresh inside the final 120s returns immediately and refreshes once`, async () => {
+      seedFullBase();
+      const row = seedFresh(feed, 60_000);
+      const cached = row.payload;
+      const state = { calls: 0 };
+      expect(await getCachedPublicFeed(feed, countingLoader(state))).toEqual(cached);
+      await __testing.settleRefreshAhead();
+      expect(state.calls).toBe(1);
+      expect(row.payload).not.toEqual(cached);
+      expect(row.freshUntil).toBe(row.refreshStartedAt! + 900_000);
+      expect(world.activeLeaseFeeds()).toEqual([]);
+      expect(__testing.refreshAheadSize()).toBe(0);
+    });
+  }
+
+  test("concurrent callers inside the window do not duplicate the refresh", async () => {
+    seedFullBase();
+    const row = seedFresh("store", 30_000);
+    const cached = row.payload;
+    const state = { calls: 0 };
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => getCachedPublicFeed("store", countingLoader(state))),
+    );
+    expect(results.every((r) => JSON.stringify(r) === JSON.stringify(cached))).toBe(true);
+    await __testing.settleRefreshAhead();
+    expect(state.calls).toBe(1);
+    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim_ahead").length).toBe(1);
+    expect(__testing.refreshAheadSize()).toBe(0);
+  });
+
+  test("an expired payload is never served by refresh ahead", async () => {
+    seedFresh("players", -1);
+    world.control.enabled = false;
+    const state = { calls: 0 };
+    await expect(getCachedPublicFeed("players", countingLoader(state))).rejects.toThrow(
+      FeedUnavailableError,
+    );
+    await __testing.settleRefreshAhead();
+    expect(state.calls).toBe(0);
+    expect(world.airtableRequests).toEqual([]);
+  });
+
+  test("a failed refresh ahead leaves the fresh payload usable until its own expiry", async () => {
+    seedFullBase();
+    const row = seedFresh("players", 90_000);
+    const cached = row.payload;
+    const failing = { calls: 0 };
+    expect(await getCachedPublicFeed("players", countingLoader(failing, true))).toEqual(cached);
+    await __testing.settleRefreshAhead();
+    expect(failing.calls).toBe(1);
+    // The still-valid payload is untouched and keeps its original expiry.
+    expect(row.payload).toEqual(cached);
+    expect(row.freshUntil).toBe(world.now + 90_000);
+    expect(world.activeLeaseFeeds()).toEqual([]);
+    const state = { calls: 0 };
+    expect(await getCachedPublicFeed("players", countingLoader(state))).toEqual(cached);
+    expect(state.calls).toBe(0);
+  });
+
+  for (const feed of ["records", "upcoming-games"] as const) {
+    test(`${feed}: unchanged — no refresh ahead inside the final 120s`, async () => {
+      seedFullBase();
+      const row = seedFresh(feed, 30_000);
+      const state = { calls: 0 };
+      expect(await getCachedPublicFeed(feed, countingLoader(state))).toEqual(row.payload);
+      await __testing.settleRefreshAhead();
+      expect(state.calls).toBe(0);
+      expect(world.airtableRequests).toEqual([]);
+      expect(world.rpcCalls).toEqual(["h2_get_or_claim"]);
+    });
+  }
 });

@@ -78,6 +78,14 @@ export type Database = {
         Args: { p_cache_key: string; p_schema_version: number }
         Returns: Json
       }
+      h2_get_or_claim_ahead: {
+        Args: {
+          p_cache_key: string
+          p_min_fresh_ms: number
+          p_schema_version: number
+        }
+        Returns: Json
+      }
       h2_take_page_permit: {
         Args: { p_cache_key: string; p_lease_token: string; p_sequence: number }
         Returns: Json

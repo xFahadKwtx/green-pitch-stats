@@ -64,6 +64,7 @@ beforeEach(() => {
   Date.now = () => now;
   environmentManager.setIsServer(() => true);
   __testing.setMode("production");
+  __testing.setRefreshAhead(false);
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname !== "m9-coordinator.test") throw new Error("Unmocked network is forbidden");
@@ -84,7 +85,7 @@ afterEach(() => {
   for (const router of routers.splice(0)) {
     router.options.context.queryClient.clear(); router.serverSsr?.cleanup();
   }
-  __testing.setMode(undefined); environmentManager.setIsServer(() => true);
+  __testing.setMode(undefined); __testing.resetRefreshAhead(); environmentManager.setIsServer(() => true);
   restoreBrowserGlobals(); Date.now = savedNow;
 });
 afterAll(() => {

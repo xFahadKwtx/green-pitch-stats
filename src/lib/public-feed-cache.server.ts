@@ -30,6 +30,16 @@ export const SCHEMA_VERSION = 1;
 /** Hard TTL for every feed, measured from refresh START. */
 export const FEED_TTL_SECONDS = 900;
 
+/**
+ * Refresh ahead: while a payload is STILL fresh but inside the final window of
+ * its TTL, the visitor is served immediately and one background refresh is
+ * triggered. The hard TTL is unchanged and expired data is never served.
+ */
+export const REFRESH_AHEAD_WINDOW_MS = 120_000;
+
+/** Only these feeds use refresh ahead. */
+const REFRESH_AHEAD_FEEDS = new Set<string>(["players", "store"]);
+
 /** Coordination timings (mirrored by the SQL coordinator). */
 export const LEASE_SECONDS = 60;
 export const REFRESH_DEADLINE_MS = 45_000;
@@ -111,8 +121,26 @@ let modeOverride: string | undefined;
 /** Per-instance in-flight coalescing: env + feed + schema version. */
 const inFlight = new Map<string, Promise<unknown>>();
 
+/** Per-instance refresh-ahead tracking: at most one background attempt per key. */
+const refreshAhead = new Map<string, Promise<unknown>>();
+
+let refreshAheadEnabled = true;
+
 /** Test-only seams. Never used by production code paths. */
 export const __testing = {
+  setRefreshAhead(enabled: boolean) {
+    refreshAheadEnabled = enabled;
+  },
+  resetRefreshAhead() {
+    refreshAheadEnabled = true;
+  },
+  refreshAheadSize: () => refreshAhead.size,
+  /** Awaits every pending background refresh so tests stay deterministic. */
+  settleRefreshAhead: async () => {
+    while (refreshAhead.size > 0) {
+      await Promise.allSettled([...refreshAhead.values()]);
+    }
+  },
   setSleep(fn: (ms: number) => Promise<void>) {
     sleepImpl = fn;
   },
@@ -326,6 +354,13 @@ async function servePublicFeed<T>(
         freshForMs > 0 &&
         monotonic() < beforeRpc + freshForMs
       ) {
+        // Refresh ahead: still fresh, but close to expiry. The visitor gets this
+        // fresh payload now; a single background attempt goes through the exact
+        // same lease/permit coordination. A failure there changes nothing about
+        // this payload's remaining validity.
+        if (freshForMs <= REFRESH_AHEAD_WINDOW_MS) {
+          await scheduleRefreshAhead(cacheKey, feed, load);
+        }
         return result["payload"] as T;
       }
 
@@ -365,6 +400,72 @@ async function servePublicFeed<T>(
     );
 
   }
+}
+
+/**
+ * Starts at most ONE background refresh for this feed/cache key. Duplicate
+ * concurrent work is prevented locally by this map and globally by the feed's
+ * own lease; a claim that is not granted simply does nothing. Failures are
+ * swallowed: refresh ahead never affects the response it accompanies.
+ */
+async function scheduleRefreshAhead<T>(
+  cacheKey: string,
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<void> {
+  if (!refreshAheadEnabled) return;
+  if (!REFRESH_AHEAD_FEEDS.has(feed)) return;
+  const key = `${cacheKey}:${SCHEMA_VERSION}`;
+  if (refreshAhead.has(key)) return;
+
+  const task = backgroundRefresh(cacheKey, feed, load)
+    .catch(() => undefined)
+    .finally(() => {
+      refreshAhead.delete(key);
+    });
+  refreshAhead.set(key, task);
+  await handOffToRuntime(task);
+}
+
+/**
+ * Hands the background task to the request-scoped runtime extension when the
+ * host provides one (Cloudflare `waitUntil`, exposed by the server adapter on
+ * the current Request), so the work is allowed to outlive the response.
+ */
+async function handOffToRuntime(task: Promise<unknown>): Promise<void> {
+  try {
+    const { getRequest } = await import("@tanstack/react-start/server");
+    const request = getRequest() as unknown as {
+      waitUntil?: (promise: Promise<unknown>) => void;
+    };
+    request?.waitUntil?.(task);
+  } catch {
+    // No request-scoped extension available; the task still runs while the
+    // instance lives. Never surfaced to the visitor.
+  }
+}
+
+async function backgroundRefresh<T>(
+  cacheKey: string,
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<void> {
+  const beforeRpc = monotonic();
+  // The refresh-ahead variant only differs in that a payload inside its final
+  // window may be claimed; every other guard (lease, backoff, cooldown,
+  // budgets) is the same and a denied claim simply does nothing here.
+  const result = await rpc("h2_get_or_claim_ahead", {
+    p_cache_key: cacheKey,
+    p_schema_version: SCHEMA_VERSION,
+    p_min_fresh_ms: REFRESH_AHEAD_WINDOW_MS,
+  });
+  if (String(result["status"] ?? "") !== "claimed") return;
+  const token = String(result["lease_token"] ?? "");
+  if (!token) return;
+  const remaining = Number(result["refresh_deadline_ms"] ?? 0);
+  const budget = Math.min(Number.isFinite(remaining) ? remaining : 0, REFRESH_DEADLINE_MS);
+  if (budget <= 0) return;
+  await runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
 }
 
 async function runRefresh<T>(
