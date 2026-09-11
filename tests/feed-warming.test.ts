@@ -28,7 +28,7 @@ process.env["SUPABASE_URL"] = "http://coordinator.test";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] = "sb_secret_dummy_test_value";
 
 const VALID_TOKEN = "a".repeat(64);
-const TICK_MS = 600_000;
+const TICK_MS = 720_000;
 /** Stands in for an upstream body that must never reach a log line. */
 const SENSITIVE = "SECRET_TOKEN_https://user:pass@internal.test/db?key=leaked";
 
@@ -373,10 +373,10 @@ describe("warmPublicFeed", () => {
     expect(calls.length).toBe(0);
   });
 
-  test("threshold bridges the next ~10min tick: 420000/600000/660000 refresh now", async () => {
+  test("threshold bridges the next 12min tick: 420000/720000/780000 refresh now", async () => {
     // Behavioural: a cache whose remaining freshness would run out before the
-    // next tick (600000 ms later) must be refreshed by THIS tick.
-    for (const remaining of [420_000, 600_000, 660_000]) {
+    // next tick (720000 ms later) must be refreshed by THIS tick.
+    for (const remaining of [420_000, 720_000, 780_000]) {
       calls = [];
       cacheRemainingMs = remaining;
       expect(await warmPublicFeed("players", loader)).toBe("published");
@@ -384,11 +384,11 @@ describe("warmPublicFeed", () => {
   });
 
   test("just outside the window is skipped but survives the next tick with margin", async () => {
-    cacheRemainingMs = 660_001;
+    cacheRemainingMs = 780_001;
     expect(await warmPublicFeed("players", loader)).toBe("skipped");
     // One tick later it is still fresh (60001 ms of margin left, never expired)
     // and is refreshed then.
-    const afterNextTick = 660_001 - TICK_MS;
+    const afterNextTick = 780_001 - TICK_MS;
     expect(afterNextTick).toBeGreaterThan(0);
     cacheRemainingMs = afterNextTick;
     expect(await warmPublicFeed("players", loader)).toBe("published");
