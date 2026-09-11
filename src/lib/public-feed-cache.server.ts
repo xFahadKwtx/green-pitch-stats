@@ -30,6 +30,16 @@ export const SCHEMA_VERSION = 1;
 /** Hard TTL for every feed, measured from refresh START. */
 export const FEED_TTL_SECONDS = 900;
 
+/**
+ * Refresh ahead: while a payload is STILL fresh but inside the final window of
+ * its TTL, the visitor is served immediately and one background refresh is
+ * triggered. The hard TTL is unchanged and expired data is never served.
+ */
+export const REFRESH_AHEAD_WINDOW_MS = 120_000;
+
+/** Only these feeds use refresh ahead. */
+const REFRESH_AHEAD_FEEDS = new Set<string>(["players", "store"]);
+
 /** Coordination timings (mirrored by the SQL coordinator). */
 export const LEASE_SECONDS = 60;
 export const REFRESH_DEADLINE_MS = 45_000;
