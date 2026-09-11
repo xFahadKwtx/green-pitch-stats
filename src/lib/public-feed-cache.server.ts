@@ -451,9 +451,13 @@ async function backgroundRefresh<T>(
   load: () => Promise<T>,
 ): Promise<void> {
   const beforeRpc = monotonic();
-  const result = await rpc("h2_get_or_claim", {
+  // The refresh-ahead variant only differs in that a payload inside its final
+  // window may be claimed; every other guard (lease, backoff, cooldown,
+  // budgets) is the same and a denied claim simply does nothing here.
+  const result = await rpc("h2_get_or_claim_ahead", {
     p_cache_key: cacheKey,
     p_schema_version: SCHEMA_VERSION,
+    p_min_fresh_ms: REFRESH_AHEAD_WINDOW_MS,
   });
   if (String(result["status"] ?? "") !== "claimed") return;
   const token = String(result["lease_token"] ?? "");

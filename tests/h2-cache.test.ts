@@ -263,6 +263,11 @@ class FakeWorld {
 
   private getOrClaim(args: Record<string, unknown>) {
     const key = String(args["p_cache_key"]);
+    // Mirrors the SQL refresh-ahead window: 0 for the plain entry point.
+    const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
+    if (!Number.isFinite(minFresh) || minFresh < 0 || minFresh > 120_000) {
+      throw new Error("invalid refresh-ahead window");
+    }
     if (Number(args["p_schema_version"]) !== 1) {
       throw new Error("unsupported schema version");
     }
@@ -272,7 +277,7 @@ class FakeWorld {
     if (
       row.payload !== null &&
       row.freshUntil !== null &&
-      row.freshUntil > this.now &&
+      row.freshUntil > this.now + minFresh &&
       row.schemaVersion === 1
     ) {
       return this.freshResponse(row);
