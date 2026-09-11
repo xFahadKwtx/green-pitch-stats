@@ -69,7 +69,7 @@ where exists (select 1 from cron.job where jobname = 'h2-warm-public-feeds');
 
 select cron.schedule(
   'h2-warm-public-feeds',
-  '*/10 * * * *',
+  '*/12 * * * *',
   $$
   select net.http_post(
     url := 'https://almustatil.lovable.app/api/public/warm-feeds',
