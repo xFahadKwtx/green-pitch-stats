@@ -578,8 +578,8 @@ describe("scheduled warmer HTTP severity", () => {
 
   test("a failed feed whose cache outlives the next boundary + margin is 200 degraded, not critical", async () => {
     airtableShouldFail = true;
-    // Fresh until 14:20 > next boundary 14:12 + 60s.
-    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    // Fresh until 14:14 > next boundary 14:12 + 60s.
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:14:00.000Z"), NOW);
     const { status, body } = await severity(await postAt(NOW));
     expect(status).toBe(200);
     expect(body.status).toBe("degraded");
@@ -667,7 +667,7 @@ describe("scheduled warmer HTTP severity", () => {
   test("mixed outcomes: one failed feed with sufficient cache beside a skip is 200", async () => {
     airtableShouldFail = true;
     claimStatusByKey = { "production:store": "fresh" };
-    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:14:00.000Z"), NOW);
     const { status, body } = await severity(await postAt(NOW));
     expect(status).toBe(200);
     expect(body.status).toBe("degraded");
@@ -679,7 +679,7 @@ describe("scheduled warmer HTTP severity", () => {
   test("mixed outcomes: one critical feed makes the whole response 503", async () => {
     airtableShouldFail = true;
     storedRowsByKey = {
-      "production:players": rowExpiringAt(Date.parse("2026-09-11T14:30:00.000Z"), NOW),
+      "production:players": rowExpiringAt(Date.parse("2026-09-11T14:14:00.000Z"), NOW),
       "production:store": null,
     };
     const { status, body } = await severity(await postAt(NOW));
@@ -691,7 +691,7 @@ describe("scheduled warmer HTTP severity", () => {
 
   test("severity assessment never publishes, mutates or serves the cached payload", async () => {
     airtableShouldFail = true;
-    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:20:00.000Z"), NOW);
+    storedRow = rowExpiringAt(Date.parse("2026-09-11T14:14:00.000Z"), NOW);
     const snapshot = JSON.stringify(storedRow);
     const res = await postAt(NOW);
     const text = await res.text();
