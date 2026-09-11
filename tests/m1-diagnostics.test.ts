@@ -444,3 +444,30 @@ test("actual Airtable 429 reaches H2 rate-limit cleanup before public sanitizati
     expect(JSON.stringify(after.logs)).not.toContain(SECRET);
   }
 });
+
+test("scheduled warm failure records survive describeDiagnostic sanitization without leaking detail", async () => {
+  const { logScheduledWarmFailure } = await import("../src/lib/server-diagnostics.server");
+  const captured: unknown[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => { captured.push(args[0]); };
+  try {
+    const upstream = Object.assign(new Error(SECRET), { status: 500 });
+    logScheduledWarmFailure("players", "refresh", upstream);
+  } finally {
+    console.error = original;
+  }
+  expect(captured).toHaveLength(1);
+  const line = describeDiagnostic(captured[0]);
+  expect(line).not.toContain(SECRET);
+  const parsed = JSON.parse(line);
+  expect(parsed.event).toBe("scheduled_warm_failure");
+  expect(parsed.feed).toBe("players");
+  expect(parsed.phase).toBe("refresh");
+  expect(parsed.category).toBe("upstream-http");
+  expect(parsed.status).toBe(500);
+  expect(parsed.timeout).toBe(false);
+  expect(typeof parsed.at).toBe("string");
+  expect(Number.isNaN(Date.parse(parsed.at))).toBe(false);
+  expect(typeof parsed.ref).toBe("string");
+  expect(line.length).toBeLessThan(300);
+});
