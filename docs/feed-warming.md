@@ -104,10 +104,16 @@ order by created desc limit 10;
 ```
 
 Expected: `status_code = 200` with `feeds` values of `published` or `skipped`.
-`status_code = 503` means at least one feed failed (or the coordinator was
-unavailable); `401` means the token is wrong; `403` means the target is not the
-production environment; `404` means the endpoint is not deployed yet;
+`status_code = 200` with `"status":"degraded"`, `"critical":false` means a feed
+failed but its cached data still covers the next scheduled run plus margin —
+check the `scheduled_warm_failure` lines for the category. `status_code = 503`
+means a failed feed could actually go cold (or the coordinator was unavailable);
+`401` means the token is wrong; `403` means the target is not the production
+environment; `404` means the endpoint is not deployed yet;
 `timed_out = true` / non-null `error_msg` means the request never completed.
+A cron job marked succeeded only means the HTTP call was enqueued, so always
+read `net._http_response` for the real status, content, `timed_out` and
+`error_msg`.
 Also confirm freshness moved:
 
 ```sql
