@@ -66,6 +66,8 @@ let airtableStatus: number | null;
 let claimRejectName: string | null;
 /** Per-cache-key claim status override for mixed-outcome tests. */
 let claimStatusByKey: Record<string, string> | null;
+/** Optional explicit loader rejection value. */
+let loaderError: unknown;
 let realFetch: typeof fetch;
 
 function freshStoredRow(remainingMs: number): StoredRow {
