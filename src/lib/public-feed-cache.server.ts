@@ -40,14 +40,15 @@ export const PERMIT_WINDOW_MS = 1_000;
 export const RPC_TIMEOUT_MS = 5_000;
 
 /**
- * Bounded busy rechecks: no unbounded per-visitor polling. The window must
- * outlast a full refresh (REFRESH_DEADLINE_MS = 45s), otherwise a visitor that
- * arrives while another request holds the lease gives up and sees an error even
- * though fresh data lands moments later.
+ * Bounded busy rechecks: no unbounded per-visitor polling. The window must be
+ * long enough to outlast a typical refresh (a visitor arriving while another
+ * request holds the lease used to give up after ~15s and see an error even
+ * though fresh data landed moments later), yet stay inside the 60s lease so a
+ * waiting visitor never steals the owner's lease.
  */
-const BUSY_RECHECK_DELAYS_MS = [
-  1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000,
-] as const;
+const BUSY_RECHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000] as const;
+export const BUSY_RECHECK_ATTEMPTS = BUSY_RECHECK_DELAYS_MS.length;
+
 
 
 /** Pacing waits are deadline-bounded; the floor bounds coordinator RPC churn. */
