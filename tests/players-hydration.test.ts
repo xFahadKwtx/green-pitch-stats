@@ -246,7 +246,7 @@ describe("real SSR serialization -> Router hydration -> page rendering", () => {
 });
 
 describe("unchanged client freshness and coalescing", () => {
-  for (const age of [0, 59_999, 60_000, 60_001, 120_000]) {
+  for (const age of [0, 899_999, 900_000, 900_001, 1_800_000]) {
     test(`hydration age ${age}ms preserves timestamps and normal mount refetch`, async () => {
       const server = routerAt(); await clientOf(server).ensureQueryData(options);
       const stamp = now; const dehydrated = await server.options.dehydrate!();
@@ -255,7 +255,7 @@ describe("unchanged client freshness and coalescing", () => {
       expect(clientOf(browser).getQueryState(options.queryKey).dataUpdatedAt).toBe(stamp);
       expect(feedCalls).toBe(1);
       const observer = observe(browser); await tick();
-      expect(feedCalls).toBe(age >= 60_000 ? 2 : 1);
+      expect(feedCalls).toBe(age >= 900_000 ? 2 : 1);
       expect(observer.getCurrentResult().data).toEqual(players);
     });
   }
@@ -273,7 +273,7 @@ describe("unchanged client freshness and coalescing", () => {
       const browser = routerAt(); await browser.options.hydrate!(await server.options.dehydrate!());
       const observer = observe(browser);
       const check = () => trigger === "focus" ? observer.shouldFetchOnWindowFocus() : observer.shouldFetchOnReconnect();
-      expect(check()).toBe(false); now += 60_001; expect(check()).toBe(true);
+      expect(check()).toBe(false); now += 900_001; expect(check()).toBe(true);
       const query = clientOf(browser).getQueryCache().find({ queryKey: options.queryKey });
       if (trigger === "focus") query.onFocus(); else query.onOnline();
       await tick(); expect(feedCalls).toBe(2);
@@ -302,7 +302,7 @@ describe("unchanged client freshness and coalescing", () => {
   });
   test("query and router defaults are not changed", () => {
     const router = routerAt();
-    expect(options.queryKey).toEqual(["players"]); expect(options.staleTime).toBe(60_000);
+    expect(options.queryKey).toEqual(["players"]); expect(options.staleTime).toBe(900_000);
     expect(clientOf(router).getDefaultOptions()).toEqual({});
     for (const key of ["gcTime", "refetchOnMount", "refetchOnWindowFocus", "refetchOnReconnect", "retry", "initialData", "placeholderData"]) {
       expect(key in options).toBe(false);
