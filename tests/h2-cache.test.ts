@@ -23,7 +23,9 @@ import {
   __testing,
   getCachedPublicFeed,
   FEED_TTL_SECONDS,
+  BUSY_RECHECK_ATTEMPTS,
 } from "../src/lib/public-feed-cache.server";
+
 import { AIRTABLE_TABLES, listAirtableRecords } from "../src/lib/airtable.server";
 import { fetchRecordsFromAirtable } from "../src/lib/records.server";
 import { fetchPlayersFromAirtable } from "../src/lib/airtable-players.server";
@@ -655,7 +657,7 @@ describe("strict 900-second freshness correction", () => {
         await expect(getCachedPublicFeed(feed, mustNotLoad)).rejects.toThrow(FeedUnavailableError);
         expect(world.selectCalls).toBe(1);
         expect(world.airtableRequests).toEqual([]);
-        expect(world.rpcCalls).toEqual(Array(status === "busy" || status === "stale-window" ? 5 : 1).fill("h2_get_or_claim"));
+        expect(world.rpcCalls).toEqual(Array(status === "busy" || status === "stale-window" ? BUSY_RECHECK_ATTEMPTS + 1 : 1).fill("h2_get_or_claim"));
         expect(world.control).toEqual(controlBefore);
       });
 
