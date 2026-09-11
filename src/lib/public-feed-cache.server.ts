@@ -402,6 +402,68 @@ async function servePublicFeed<T>(
   }
 }
 
+/**
+ * Starts at most ONE background refresh for this feed/cache key. Duplicate
+ * concurrent work is prevented locally by this map and globally by the feed's
+ * own lease; a claim that is not granted simply does nothing. Failures are
+ * swallowed: refresh ahead never affects the response it accompanies.
+ */
+async function scheduleRefreshAhead<T>(
+  cacheKey: string,
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<void> {
+  if (!refreshAheadEnabled) return;
+  if (!REFRESH_AHEAD_FEEDS.has(feed)) return;
+  const key = `${cacheKey}:${SCHEMA_VERSION}`;
+  if (refreshAhead.has(key)) return;
+
+  const task = backgroundRefresh(cacheKey, feed, load)
+    .catch(() => undefined)
+    .finally(() => {
+      refreshAhead.delete(key);
+    });
+  refreshAhead.set(key, task);
+  await handOffToRuntime(task);
+}
+
+/**
+ * Hands the background task to the request-scoped runtime extension when the
+ * host provides one (Cloudflare `waitUntil`, exposed by the server adapter on
+ * the current Request), so the work is allowed to outlive the response.
+ */
+async function handOffToRuntime(task: Promise<unknown>): Promise<void> {
+  try {
+    const { getRequest } = await import("@tanstack/react-start/server");
+    const request = getRequest() as unknown as {
+      waitUntil?: (promise: Promise<unknown>) => void;
+    };
+    request?.waitUntil?.(task);
+  } catch {
+    // No request-scoped extension available; the task still runs while the
+    // instance lives. Never surfaced to the visitor.
+  }
+}
+
+async function backgroundRefresh<T>(
+  cacheKey: string,
+  feed: FeedName,
+  load: () => Promise<T>,
+): Promise<void> {
+  const beforeRpc = monotonic();
+  const result = await rpc("h2_get_or_claim", {
+    p_cache_key: cacheKey,
+    p_schema_version: SCHEMA_VERSION,
+  });
+  if (String(result["status"] ?? "") !== "claimed") return;
+  const token = String(result["lease_token"] ?? "");
+  if (!token) return;
+  const remaining = Number(result["refresh_deadline_ms"] ?? 0);
+  const budget = Math.min(Number.isFinite(remaining) ? remaining : 0, REFRESH_DEADLINE_MS);
+  if (budget <= 0) return;
+  await runRefresh(cacheKey, feed, token, beforeRpc + budget, load);
+}
+
 async function runRefresh<T>(
   cacheKey: string,
   feed: FeedName,
