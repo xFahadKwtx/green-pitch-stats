@@ -195,7 +195,7 @@ async function post(): Promise<Response> {
 }
 
 const loader = async () => {
-  if (loadShouldFail) throw new Error("upstream boom");
+  if (loadShouldFail) throw loaderError ?? new Error("upstream boom");
   return loaderPayload;
 };
 
