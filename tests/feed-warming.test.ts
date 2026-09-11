@@ -9,7 +9,11 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { handleWarmFeedsRequest } from "../src/routes/api/public/warm-feeds";
+import {
+  SCHEDULE_MARGIN_MS,
+  handleWarmFeedsRequest,
+  nextScheduleBoundaryMs,
+} from "../src/routes/api/public/warm-feeds";
 import {
   REFRESH_AHEAD_WINDOW_MS,
   WARM_MIN_FRESH_MS,
