@@ -33,6 +33,7 @@ let claimStatus: string;
 let cacheRemainingMs: number | null;
 let airtableCalls: number;
 let airtableShouldFail: boolean;
+let previousPayloadFresh: boolean;
 let finishStatus: string;
 let loadShouldFail: boolean;
 let realFetch: typeof fetch;
@@ -45,6 +46,22 @@ function install() {
       airtableCalls += 1;
       if (airtableShouldFail) throw new Error("upstream unreachable");
       return new Response(JSON.stringify({ records: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/airtable_public_cache")) {
+      calls.push({ fn: "select_cache", args: {} });
+      const rows = previousPayloadFresh
+        ? [
+            {
+              payload: { schema_version: 1, items: [{ id: "old" }] },
+              refresh_started_at: new Date().toISOString(),
+              fresh_until: new Date(Date.now() + 300_000).toISOString(),
+            },
+          ]
+        : [];
+      return new Response(JSON.stringify(rows), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -111,6 +128,7 @@ beforeEach(() => {
   cacheRemainingMs = null;
   airtableCalls = 0;
   airtableShouldFail = false;
+  previousPayloadFresh = false;
   finishStatus = "published";
   loadShouldFail = false;
   __testing.setMode("production");
@@ -185,6 +203,17 @@ describe("warmPublicFeed", () => {
     finishStatus = "stale_lease";
     expect(await warmPublicFeed("players", loader)).toBe("failed");
     expect(calls.some((c) => c.fn === "h2_fail_refresh")).toBe(true);
+  });
+
+  test("the shared stale fallback can never be reported as published", async () => {
+    // runRefresh may return a still-fresh previous payload to a visitor, but
+    // warming must report that as failed.
+    previousPayloadFresh = true;
+    finishStatus = "stale_lease";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    loadShouldFail = true;
+    finishStatus = "published";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
   });
 
   test("only players and store are warmed", async () => {
@@ -288,6 +317,7 @@ describe("warming endpoint authorization and status codes", () => {
   cacheRemainingMs = null;
   airtableCalls = 0;
   airtableShouldFail = false;
+  previousPayloadFresh = false;
     airtableShouldFail = true;
     const res = await post();
     expect(res.status).toBe(503);
