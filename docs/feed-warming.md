@@ -47,13 +47,14 @@ data is never served.
   upstream body is ever logged, and a failing log sink cannot change a response.
 - `warmPublicFeed()` in `src/lib/public-feed-cache.server.ts` — claims through
   `h2_get_or_claim_ahead` with the wider warming window (`WARM_MIN_FRESH_MS`,
-  660000 ms) and reuses the existing refresh machinery and Airtable fetchers.
-  660000 ms is the unchanged warming threshold: an entry with less than that
-  much freshness left is refreshed now. It is not a guarantee that a skipped
-  entry survives until the next scheduled run; the endpoint's severity
-  assessment, not this constant, decides whether a failure is critical. The
-  wider SQL bound applies to `production:players` / `production:store` only;
-  preview and all other feeds keep the 120000 ms visitor window.
+  780000 ms) and reuses the existing refresh machinery and Airtable fetchers.
+  780000 ms is the unchanged warming threshold: an entry with less than that
+  much freshness left is refreshed now. It safely exceeds the 12-minute cron
+  interval with a 60s margin. It is not a guarantee that a skipped entry
+  survives until the next scheduled run; the endpoint's severity assessment,
+  not this constant, decides whether a failure is critical. The wider SQL bound
+  applies to `production:players` / `production:store` only; preview and all
+  other feeds keep the 120000 ms visitor window.
 - Token: generated in and read only from the encrypted vault
   (`vault.secrets`, name `h2_warm_token`). It is never in code or logs.
 

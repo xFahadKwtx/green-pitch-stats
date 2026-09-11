@@ -43,15 +43,15 @@ export const REFRESH_AHEAD_WINDOW_MS = 120_000;
 const REFRESH_AHEAD_FEEDS = new Set<string>(["players", "store"]);
 
 /**
- * Active warming (scheduled, roughly every 10 minutes) uses a wider refresh
- * ahead window. It must be at least one full tick (600000 ms) plus scheduling
- * jitter/runtime margin, otherwise a cache whose remaining freshness sits
- * between the threshold and one tick is skipped now and expires before the next
- * tick, leaving a cold gap. 660000 ms bridges the next tick with 60s of margin.
+ * Active warming (scheduled, every 12 minutes) uses a wider refresh-ahead
+ * window. It must safely exceed the 720000 ms cron interval with a margin,
+ * otherwise a cache whose remaining freshness sits between the threshold and
+ * one tick is skipped now and expires before the next tick, leaving a cold
+ * gap. 780000 ms bridges the next 12-minute tick with 60s of margin.
  * Restricted to players/store, production only. The hard TTL is unchanged and
  * expired data is still never served.
  */
-export const WARM_MIN_FRESH_MS = 660_000;
+export const WARM_MIN_FRESH_MS = 780_000;
 const WARM_FEEDS = new Set<string>(["players", "store"]);
 
 /**
