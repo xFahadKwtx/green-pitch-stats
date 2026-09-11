@@ -20,6 +20,7 @@ import { Route as StoreRouteImport } from './routes/store'
 import { Route as UpcomingGamesRouteImport } from './routes/upcoming-games'
 import { Route as PlayersIndexRouteImport } from './routes/players.index'
 import { Route as PlayersPlayerIdRouteImport } from './routes/players.$playerId'
+import { Route as ApiPublicWarmFeedsRouteImport } from './routes/api/public/warm-feeds'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const PlayersPlayerIdRoute = PlayersPlayerIdRouteImport.update({
   path: '/players/$playerId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicWarmFeedsRoute = ApiPublicWarmFeedsRouteImport.update({
+  id: '/api/public/warm-feeds',
+  path: '/api/public/warm-feeds',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players/': typeof PlayersIndexRoute
+  '/api/public/warm-feeds': typeof ApiPublicWarmFeedsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players': typeof PlayersIndexRoute
+  '/api/public/warm-feeds': typeof ApiPublicWarmFeedsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/upcoming-games': typeof UpcomingGamesRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/players/': typeof PlayersIndexRoute
+  '/api/public/warm-feeds': typeof ApiPublicWarmFeedsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/upcoming-games'
     | '/players/$playerId'
     | '/players/'
+    | '/api/public/warm-feeds'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/upcoming-games'
     | '/players/$playerId'
     | '/players'
+    | '/api/public/warm-feeds'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/upcoming-games'
     | '/players/$playerId'
     | '/players/'
+    | '/api/public/warm-feeds'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   UpcomingGamesRoute: typeof UpcomingGamesRoute
   PlayersPlayerIdRoute: typeof PlayersPlayerIdRoute
   PlayersIndexRoute: typeof PlayersIndexRoute
+  ApiPublicWarmFeedsRoute: typeof ApiPublicWarmFeedsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlayersPlayerIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/warm-feeds': {
+      id: '/api/public/warm-feeds'
+      path: '/api/public/warm-feeds'
+      fullPath: '/api/public/warm-feeds'
+      preLoaderRoute: typeof ApiPublicWarmFeedsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   UpcomingGamesRoute: UpcomingGamesRoute,
   PlayersPlayerIdRoute: PlayersPlayerIdRoute,
   PlayersIndexRoute: PlayersIndexRoute,
+  ApiPublicWarmFeedsRoute: ApiPublicWarmFeedsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
