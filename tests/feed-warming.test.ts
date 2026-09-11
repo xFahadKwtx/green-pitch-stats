@@ -11,8 +11,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { handleWarmFeedsRequest } from "../src/routes/api/public/warm-feeds";
 import {
+  REFRESH_AHEAD_WINDOW_MS,
   WARM_MIN_FRESH_MS,
   __testing,
+  getCachedPublicFeed,
+  runAirtablePage,
   verifyWarmToken,
   warmPublicFeed,
 } from "../src/lib/public-feed-cache.server";
@@ -21,27 +24,58 @@ process.env["SUPABASE_URL"] = "http://coordinator.test";
 process.env["SUPABASE_SERVICE_ROLE_KEY"] = "sb_secret_dummy_test_value";
 
 const VALID_TOKEN = "a".repeat(64);
+const TICK_MS = 600_000;
 
 interface Call {
   fn: string;
   args: Record<string, unknown>;
 }
 
+/** A stored cache row as PostgREST would return it. */
+interface StoredRow {
+  payload: unknown[];
+  refresh_started_at: string;
+  fresh_until: string;
+}
+
 let calls: Call[] = [];
 let claimStatus: string;
 /** Remaining freshness of the cached entry, as the coordinator would see it. */
 let cacheRemainingMs: number | null;
+let finishStatus: string;
+let permitStatuses: string[];
+let loadShouldFail: boolean;
+let loaderPayload: unknown[];
+let storedRow: StoredRow | null;
+let storedRowSnapshot: string | null;
 let airtableCalls: number;
 let airtableShouldFail: boolean;
-let previousPayloadFresh: boolean;
-let finishStatus: string;
-let loadShouldFail: boolean;
 let realFetch: typeof fetch;
+
+function freshStoredRow(remainingMs: number): StoredRow {
+  const now = Date.now();
+  return {
+    payload: [{ id: "old" }],
+    refresh_started_at: new Date(now - (900_000 - remainingMs)).toISOString(),
+    fresh_until: new Date(now + remainingMs).toISOString(),
+  };
+}
+
+function expiredStoredRow(): StoredRow {
+  const now = Date.now();
+  return {
+    payload: [{ id: "old" }],
+    refresh_started_at: new Date(now - 1_000_000).toISOString(),
+    fresh_until: new Date(now - 100_000).toISOString(),
+  };
+}
 
 function install() {
   realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+
+    // Anything that is not the coordinator stands in for Airtable.
     if (!url.startsWith("http://coordinator.test")) {
       airtableCalls += 1;
       if (airtableShouldFail) throw new Error("upstream unreachable");
@@ -50,22 +84,20 @@ function install() {
         headers: { "content-type": "application/json" },
       });
     }
+
+    // Read-only stored-payload lookup used by the empty-overwrite protection.
     if (url.includes("/rest/v1/airtable_public_cache")) {
       calls.push({ fn: "select_cache", args: {} });
-      const rows = previousPayloadFresh
-        ? [
-            {
-              payload: { schema_version: 1, items: [{ id: "old" }] },
-              refresh_started_at: new Date().toISOString(),
-              fresh_until: new Date(Date.now() + 300_000).toISOString(),
-            },
-          ]
-        : [];
-      return new Response(JSON.stringify(rows), {
+      return new Response(JSON.stringify(storedRow ? [storedRow] : []), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          // Server Date is required for the freshness derivation.
+          date: new Date().toUTCString(),
+        },
       });
     }
+
     const fn = url.split("/rpc/")[1] ?? "";
     const args = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     calls.push({ fn, args });
@@ -73,7 +105,7 @@ function install() {
     let body: unknown;
     if (fn === "h2_verify_warm_token") {
       body = { authorized: args["p_token"] === VALID_TOKEN };
-    } else if (fn === "h2_get_or_claim_ahead") {
+    } else if (fn === "h2_get_or_claim_ahead" || fn === "h2_get_or_claim") {
       // Mirror the SQL freshness comparison when a remaining lifetime is set.
       const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
       const effective =
@@ -89,9 +121,21 @@ function install() {
               lease_token: "00000000-0000-4000-8000-000000000001",
               refresh_deadline_ms: 45_000,
             }
-          : { status: effective };
+          : effective === "fresh"
+            ? {
+                status: "fresh",
+                payload: [{ id: "cached" }],
+                fresh_for_ms: cacheRemainingMs ?? 900_000,
+              }
+            : { status: effective };
     } else if (fn === "h2_take_page_permit") {
-      body = { status: "granted", usable_for_ms: 1_000, refresh_deadline_ms: 40_000 };
+      const status = permitStatuses.length > 1 ? permitStatuses.shift()! : permitStatuses[0]!;
+      body =
+        status === "granted"
+          ? { status: "granted", usable_for_ms: 1_000, refresh_deadline_ms: 40_000 }
+          : status === "paced"
+            ? { status: "paced", wait_ms: 500 }
+            : { status };
     } else if (fn === "h2_finish_refresh") {
       body = { status: finishStatus };
     } else if (fn === "h2_fail_refresh") {
@@ -106,8 +150,6 @@ function install() {
   }) as typeof fetch;
 }
 
-const TICK_MS = 600_000;
-
 async function post(): Promise<Response> {
   return handleWarmFeedsRequest(
     new Request("http://localhost/api/public/warm-feeds", {
@@ -119,18 +161,28 @@ async function post(): Promise<Response> {
 
 const loader = async () => {
   if (loadShouldFail) throw new Error("upstream boom");
-  return [{ id: "p001" }];
+  return loaderPayload;
 };
+
+/** A loader that legitimately dispatches one paginated Airtable page. */
+const pagedLoader = async () =>
+  runAirtablePage("tblTest", "page-1", async () => {
+    await fetch("https://api.airtable.test/v0/base/tblTest");
+    return loaderPayload;
+  });
 
 beforeEach(() => {
   calls = [];
   claimStatus = "claimed";
   cacheRemainingMs = null;
+  finishStatus = "published";
+  permitStatuses = ["granted"];
+  loadShouldFail = false;
+  loaderPayload = [{ id: "p001" }];
+  storedRow = null;
+  storedRowSnapshot = null;
   airtableCalls = 0;
   airtableShouldFail = false;
-  previousPayloadFresh = false;
-  finishStatus = "published";
-  loadShouldFail = false;
   __testing.setMode("production");
   install();
 });
@@ -138,6 +190,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = realFetch;
   __testing.setMode(undefined);
+  __testing.resetRefreshAhead();
 });
 
 describe("warming authorization", () => {
@@ -166,6 +219,14 @@ describe("warmPublicFeed", () => {
     expect(calls.some((c) => c.fn === "h2_finish_refresh")).toBe(false);
   });
 
+  test("Store is refreshed before expiry, one tick ahead", async () => {
+    cacheRemainingMs = TICK_MS;
+    expect(await warmPublicFeed("store", loader)).toBe("published");
+    const claim = calls.find((c) => c.fn === "h2_get_or_claim_ahead")!;
+    expect(claim.args["p_cache_key"]).toBe("production:store");
+    expect(claim.args["p_min_fresh_ms"]).toBe(WARM_MIN_FRESH_MS);
+  });
+
   test("an overlapping refresh (busy lease) is skipped, never duplicated", async () => {
     claimStatus = "busy";
     expect(await warmPublicFeed("players", loader)).toBe("skipped");
@@ -192,6 +253,37 @@ describe("warmPublicFeed", () => {
     }
   });
 
+  test("every warmed Airtable page still goes through a permit", async () => {
+    expect(await warmPublicFeed("players", pagedLoader)).toBe("published");
+    expect(calls.filter((c) => c.fn === "h2_take_page_permit").length).toBe(1);
+    expect(airtableCalls).toBe(1);
+  });
+
+  test("permit pacing is honoured before the next dispatch", async () => {
+    const waits: number[] = [];
+    __testing.setSleep(async (ms) => {
+      waits.push(ms);
+    });
+    permitStatuses = ["paced", "granted"];
+    expect(await warmPublicFeed("players", pagedLoader)).toBe("published");
+    __testing.resetSleep();
+    expect(waits).toEqual([500]);
+    expect(calls.filter((c) => c.fn === "h2_take_page_permit").length).toBe(2);
+    expect(airtableCalls).toBe(1);
+  });
+
+  test("permit-level budget and cooldown denials fail the warm without dispatching", async () => {
+    for (const status of ["budget_exhausted", "cooldown", "stale_lease"]) {
+      calls = [];
+      airtableCalls = 0;
+      permitStatuses = [status];
+      expect(await warmPublicFeed("players", pagedLoader)).toBe("failed");
+      expect(airtableCalls).toBe(0);
+      expect(calls.some((c) => c.fn === "h2_finish_refresh")).toBe(false);
+      expect(calls.some((c) => c.fn === "h2_fail_refresh")).toBe(true);
+    }
+  });
+
   test("an upstream failure reports failed and never masquerades as published", async () => {
     loadShouldFail = true;
     expect(await warmPublicFeed("players", loader)).toBe("failed");
@@ -205,15 +297,24 @@ describe("warmPublicFeed", () => {
     expect(calls.some((c) => c.fn === "h2_fail_refresh")).toBe(true);
   });
 
-  test("the shared stale fallback can never be reported as published", async () => {
-    // runRefresh may return a still-fresh previous payload to a visitor, but
-    // warming must report that as failed.
-    previousPayloadFresh = true;
-    finishStatus = "stale_lease";
-    expect(await warmPublicFeed("players", loader)).toBe("failed");
-    loadShouldFail = true;
-    finishStatus = "published";
-    expect(await warmPublicFeed("players", loader)).toBe("failed");
+  test("the previous-payload fallback can never be reported as published", async () => {
+    // The fallback is only reachable on an EMPTY players refresh, so the loader
+    // must return []. A still-fresh previous payload would be handed to a
+    // visitor, but warming must report failed and leave the cache untouched.
+    loaderPayload = [];
+    for (const row of [freshStoredRow(300_000), expiredStoredRow()]) {
+      calls = [];
+      storedRow = row;
+      storedRowSnapshot = JSON.stringify(row);
+      expect(await warmPublicFeed("players", loader)).toBe("failed");
+      // The protection actually ran, and cleanup was recorded.
+      expect(calls.some((c) => c.fn === "select_cache")).toBe(true);
+      expect(calls.some((c) => c.fn === "h2_fail_refresh")).toBe(true);
+      // The empty payload was never published, so the valid row and its
+      // freshness are unmodified.
+      expect(calls.some((c) => c.fn === "h2_finish_refresh")).toBe(false);
+      expect(JSON.stringify(storedRow)).toBe(storedRowSnapshot);
+    }
   });
 
   test("only players and store are warmed", async () => {
@@ -279,6 +380,37 @@ describe("warmPublicFeed", () => {
   });
 });
 
+describe("visitor behaviour while warming runs", () => {
+  test("a fresh stored payload is served while a warm refresh holds the lease", async () => {
+    // The visitor's own claim is denied (cooldown) and the stored entry is
+    // still fresh: it is served without any refresh of its own.
+    claimStatus = "cooldown";
+    storedRow = freshStoredRow(300_000);
+    const data = await getCachedPublicFeed<unknown[]>("players", loader);
+    expect(data).toEqual([{ id: "old" }]);
+    expect(calls.some((c) => c.fn === "h2_finish_refresh")).toBe(false);
+  });
+
+  test("an expired stored payload is never served", async () => {
+    claimStatus = "cooldown";
+    storedRow = expiredStoredRow();
+    await expect(getCachedPublicFeed("players", loader)).rejects.toThrow();
+  });
+
+  test("the passive 120s refresh-ahead window is unchanged for visitors", async () => {
+    // Fresh, inside the visitor refresh-ahead window.
+    claimStatus = "fresh";
+    cacheRemainingMs = REFRESH_AHEAD_WINDOW_MS - 1_000;
+    const data = await getCachedPublicFeed<unknown[]>("players", loader);
+    expect(data).toEqual([{ id: "cached" }]);
+    await __testing.settleRefreshAhead();
+    const ahead = calls.filter((c) => c.fn === "h2_get_or_claim_ahead");
+    expect(ahead.length).toBe(1);
+    expect(ahead[0]!.args["p_min_fresh_ms"]).toBe(REFRESH_AHEAD_WINDOW_MS);
+    expect(REFRESH_AHEAD_WINDOW_MS).toBe(120_000);
+  });
+});
+
 describe("warming endpoint authorization and status codes", () => {
   test("a missing or invalid token is denied and no work is started", async () => {
     for (const headers of [{}, { "x-warm-token": "b".repeat(64) }]) {
@@ -313,11 +445,6 @@ describe("warming endpoint authorization and status codes", () => {
   });
 
   test("a failed feed returns 503 instead of a top-level ok 200", async () => {
-    claimStatus = "claimed";
-  cacheRemainingMs = null;
-  airtableCalls = 0;
-  airtableShouldFail = false;
-  previousPayloadFresh = false;
     airtableShouldFail = true;
     const res = await post();
     expect(res.status).toBe(503);
