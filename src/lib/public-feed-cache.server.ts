@@ -650,6 +650,8 @@ async function runRefresh<T>(
         throw new FeedUnavailableError(`refresh result rejected for ${feed}`);
       }
       guard("after finish");
+      if (published) published.value = true;
+
     } catch (error) {
       return await abandon(error, previousPlayers);
     }
