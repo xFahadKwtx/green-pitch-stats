@@ -40,6 +40,19 @@ export const REFRESH_AHEAD_WINDOW_MS = 120_000;
 /** Only these feeds use refresh ahead. */
 const REFRESH_AHEAD_FEEDS = new Set<string>(["players", "store"]);
 
+/**
+ * Active warming (scheduled, roughly every 10 minutes) uses a wider refresh
+ * ahead window so one tick always bridges to the next: 10min tick + margin.
+ * Restricted to players/store, production only. The hard TTL is unchanged and
+ * expired data is still never served.
+ */
+export const WARM_MIN_FRESH_MS = 360_000;
+const WARM_FEEDS = new Set<string>(["players", "store"]);
+
+/** Sanitized per-feed warming outcome. A fallback can never report published. */
+export type WarmOutcome = "published" | "skipped" | "failed";
+
+
 /** Coordination timings (mirrored by the SQL coordinator). */
 export const LEASE_SECONDS = 60;
 export const REFRESH_DEADLINE_MS = 45_000;
