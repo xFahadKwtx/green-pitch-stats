@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { handleWarmFeedsRequest } from "../src/routes/api/public/warm-feeds";
 import {
   WARM_MIN_FRESH_MS,
   __testing,
@@ -28,6 +29,11 @@ interface Call {
 
 let calls: Call[] = [];
 let claimStatus: string;
+/** Remaining freshness of the cached entry, as the coordinator would see it. */
+let cacheRemainingMs: number | null;
+let airtableCalls: number;
+let airtableShouldFail: boolean;
+let previousPayloadFresh: boolean;
 let finishStatus: string;
 let loadShouldFail: boolean;
 let realFetch: typeof fetch;
@@ -36,6 +42,30 @@ function install() {
   realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    if (!url.startsWith("http://coordinator.test")) {
+      airtableCalls += 1;
+      if (airtableShouldFail) throw new Error("upstream unreachable");
+      return new Response(JSON.stringify({ records: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/airtable_public_cache")) {
+      calls.push({ fn: "select_cache", args: {} });
+      const rows = previousPayloadFresh
+        ? [
+            {
+              payload: { schema_version: 1, items: [{ id: "old" }] },
+              refresh_started_at: new Date().toISOString(),
+              fresh_until: new Date(Date.now() + 300_000).toISOString(),
+            },
+          ]
+        : [];
+      return new Response(JSON.stringify(rows), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const fn = url.split("/rpc/")[1] ?? "";
     const args = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     calls.push({ fn, args });
@@ -44,14 +74,22 @@ function install() {
     if (fn === "h2_verify_warm_token") {
       body = { authorized: args["p_token"] === VALID_TOKEN };
     } else if (fn === "h2_get_or_claim_ahead") {
+      // Mirror the SQL freshness comparison when a remaining lifetime is set.
+      const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
+      const effective =
+        cacheRemainingMs === null
+          ? claimStatus
+          : cacheRemainingMs > minFresh
+            ? "fresh"
+            : "claimed";
       body =
-        claimStatus === "claimed"
+        effective === "claimed"
           ? {
               status: "claimed",
               lease_token: "00000000-0000-4000-8000-000000000001",
               refresh_deadline_ms: 45_000,
             }
-          : { status: claimStatus };
+          : { status: effective };
     } else if (fn === "h2_take_page_permit") {
       body = { status: "granted", usable_for_ms: 1_000, refresh_deadline_ms: 40_000 };
     } else if (fn === "h2_finish_refresh") {
@@ -68,6 +106,17 @@ function install() {
   }) as typeof fetch;
 }
 
+const TICK_MS = 600_000;
+
+async function post(): Promise<Response> {
+  return handleWarmFeedsRequest(
+    new Request("http://localhost/api/public/warm-feeds", {
+      method: "POST",
+      headers: { "x-warm-token": VALID_TOKEN },
+    }),
+  );
+}
+
 const loader = async () => {
   if (loadShouldFail) throw new Error("upstream boom");
   return [{ id: "p001" }];
@@ -76,6 +125,10 @@ const loader = async () => {
 beforeEach(() => {
   calls = [];
   claimStatus = "claimed";
+  cacheRemainingMs = null;
+  airtableCalls = 0;
+  airtableShouldFail = false;
+  previousPayloadFresh = false;
   finishStatus = "published";
   loadShouldFail = false;
   __testing.setMode("production");
@@ -152,6 +205,17 @@ describe("warmPublicFeed", () => {
     expect(calls.some((c) => c.fn === "h2_fail_refresh")).toBe(true);
   });
 
+  test("the shared stale fallback can never be reported as published", async () => {
+    // runRefresh may return a still-fresh previous payload to a visitor, but
+    // warming must report that as failed.
+    previousPayloadFresh = true;
+    finishStatus = "stale_lease";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    loadShouldFail = true;
+    finishStatus = "published";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+  });
+
   test("only players and store are warmed", async () => {
     expect(await warmPublicFeed("records", loader)).toBe("skipped");
     expect(await warmPublicFeed("upcoming-games", loader)).toBe("skipped");
@@ -166,12 +230,99 @@ describe("warmPublicFeed", () => {
     expect(calls.length).toBe(0);
   });
 
-  test("the warming threshold bridges the ~10 minute schedule with margin", () => {
-    const tick = 600_000;
-    // Worst case a tick lands right after a refresh; the next tick is 10min
-    // later, leaving TTL-600s of freshness. The threshold must exceed that.
-    expect(WARM_MIN_FRESH_MS).toBeGreaterThan(900_000 - tick);
-    // ...and stay well inside the TTL so warming cannot refresh continuously.
-    expect(WARM_MIN_FRESH_MS).toBeLessThan(900_000 - tick + 120_000);
+  test("threshold bridges the next ~10min tick: 420000/600000/660000 refresh now", async () => {
+    // Behavioural: a cache whose remaining freshness would run out before the
+    // next tick (600000 ms later) must be refreshed by THIS tick.
+    for (const remaining of [420_000, 600_000, 660_000]) {
+      calls = [];
+      cacheRemainingMs = remaining;
+      expect(await warmPublicFeed("players", loader)).toBe("published");
+    }
+  });
+
+  test("just outside the window is skipped but survives the next tick with margin", async () => {
+    cacheRemainingMs = 660_001;
+    expect(await warmPublicFeed("players", loader)).toBe("skipped");
+    // One tick later it is still fresh (60001 ms of margin left, never expired)
+    // and is refreshed then.
+    const afterNextTick = 660_001 - TICK_MS;
+    expect(afterNextTick).toBeGreaterThan(0);
+    cacheRemainingMs = afterNextTick;
+    expect(await warmPublicFeed("players", loader)).toBe("published");
+  });
+
+  test("a cache refreshed between ticks is skipped once, then warmed, never expiring", async () => {
+    // Freshly refreshed by a visitor right after a tick.
+    cacheRemainingMs = 900_000;
+    expect(await warmPublicFeed("players", loader)).toBe("skipped");
+    let remaining = 900_000;
+    // Walk several ticks; the cache must never reach zero remaining freshness.
+    for (let i = 0; i < 6; i++) {
+      remaining -= TICK_MS;
+      expect(remaining).toBeGreaterThan(0);
+      cacheRemainingMs = remaining;
+      const outcome = await warmPublicFeed("players", loader);
+      if (outcome === "published") remaining = 900_000;
+      else expect(outcome).toBe("skipped");
+    }
+  });
+
+  test("an unknown coordinator answer is failed, recognized denials stay skipped", async () => {
+    claimStatus = "something_new";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    claimStatus = "";
+    expect(await warmPublicFeed("players", loader)).toBe("failed");
+    for (const status of ["fresh", "busy", "backoff", "cooldown", "budget_exhausted", "disabled"]) {
+      claimStatus = status;
+      expect(await warmPublicFeed("players", loader)).toBe("skipped");
+    }
+  });
+});
+
+describe("warming endpoint authorization and status codes", () => {
+  test("a missing or invalid token is denied and no work is started", async () => {
+    for (const headers of [{}, { "x-warm-token": "b".repeat(64) }]) {
+      calls = [];
+      airtableCalls = 0;
+      const res = await handleWarmFeedsRequest(
+        new Request("http://localhost/api/public/warm-feeds", { method: "POST", headers }),
+      );
+      expect(res.status).toBe(401);
+      expect(calls.some((c) => c.fn === "h2_get_or_claim_ahead")).toBe(false);
+      expect(airtableCalls).toBe(0);
+    }
+  });
+
+  test("a non-production environment is denied even with a valid token", async () => {
+    __testing.setMode("development");
+    const res = await post();
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ status: "not_production" });
+    expect(calls.some((c) => c.fn === "h2_get_or_claim_ahead")).toBe(false);
+    expect(airtableCalls).toBe(0);
+  });
+
+  test("valid skips return 200", async () => {
+    claimStatus = "fresh";
+    const res = await post();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; feeds: Record<string, string> };
+    expect(body.status).toBe("ok");
+    expect(body.feeds["players"]).toBe("skipped");
+    expect(body.feeds["store"]).toBe("skipped");
+  });
+
+  test("a failed feed returns 503 instead of a top-level ok 200", async () => {
+    claimStatus = "claimed";
+  cacheRemainingMs = null;
+  airtableCalls = 0;
+  airtableShouldFail = false;
+  previousPayloadFresh = false;
+    airtableShouldFail = true;
+    const res = await post();
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { status: string; feeds: Record<string, string> };
+    expect(body.status).toBe("degraded");
+    expect(body.feeds["players"]).toBe("failed");
   });
 });

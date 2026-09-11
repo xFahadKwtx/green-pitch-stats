@@ -266,7 +266,7 @@ class FakeWorld {
     // Mirrors the SQL refresh-ahead window: 0 for the plain entry point, and a
     // wider bound for players/store (scheduled warming).
     const minFresh = Number(args["p_min_fresh_ms"] ?? 0);
-    const maxWindow = /:(players|store)$/.test(key) ? 360_000 : 120_000;
+    const maxWindow = /^production:(players|store)$/.test(key) ? 660_000 : 120_000;
     if (!Number.isFinite(minFresh) || minFresh < 0 || minFresh > maxWindow) {
       throw new Error("invalid refresh-ahead window");
     }

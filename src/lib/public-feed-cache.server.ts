@@ -42,12 +42,28 @@ const REFRESH_AHEAD_FEEDS = new Set<string>(["players", "store"]);
 
 /**
  * Active warming (scheduled, roughly every 10 minutes) uses a wider refresh
- * ahead window so one tick always bridges to the next: 10min tick + margin.
+ * ahead window. It must be at least one full tick (600000 ms) plus scheduling
+ * jitter/runtime margin, otherwise a cache whose remaining freshness sits
+ * between the threshold and one tick is skipped now and expires before the next
+ * tick, leaving a cold gap. 660000 ms bridges the next tick with 60s of margin.
  * Restricted to players/store, production only. The hard TTL is unchanged and
  * expired data is still never served.
  */
-export const WARM_MIN_FRESH_MS = 360_000;
+export const WARM_MIN_FRESH_MS = 660_000;
 const WARM_FEEDS = new Set<string>(["players", "store"]);
+
+/**
+ * Coordinator answers that mean "nothing to do" for a warming claim. Any other
+ * status (including an empty or unknown one) is reported as a failure.
+ */
+const COORDINATOR_DENIALS = new Set<string>([
+  "fresh",
+  "busy",
+  "backoff",
+  "cooldown",
+  "budget_exhausted",
+  "disabled",
+]);
 
 /** Sanitized per-feed warming outcome. A fallback can never report published. */
 export type WarmOutcome = "published" | "skipped" | "failed";
@@ -525,9 +541,12 @@ export async function warmPublicFeed<T>(
       p_schema_version: SCHEMA_VERSION,
       p_min_fresh_ms: WARM_MIN_FRESH_MS,
     });
-    // fresh / busy / backoff / cooldown / budget_exhausted / disabled: nothing
-    // to do, and no protection is bypassed.
-    if (String(result["status"] ?? "") !== "claimed") return "skipped";
+    const status = String(result["status"] ?? "");
+    if (status !== "claimed") {
+      // Recognized coordinator denials are legitimate skips; anything else is
+      // an unexpected/unknown answer and must surface as a failure.
+      return COORDINATOR_DENIALS.has(status) ? "skipped" : "failed";
+    }
     const token = String(result["lease_token"] ?? "");
     if (!token) return "failed";
     const remaining = Number(result["refresh_deadline_ms"] ?? 0);
