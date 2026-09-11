@@ -198,7 +198,7 @@ class FakeWorld {
     // Time consumed while the RPC is in flight (DB clock advances).
     this.advance(this.rpcAdvanceMs[fn] ?? 0);
 
-    if (fn === "h2_get_or_claim") return this.getOrClaim(args);
+    if (fn === "h2_get_or_claim" || fn === "h2_get_or_claim_ahead") return this.getOrClaim(args);
     if (fn === "h2_take_page_permit") return this.takePermit(args);
     if (fn === "h2_finish_refresh") return this.finish(args);
     if (fn === "h2_fail_refresh") return this.fail(args);
@@ -2188,7 +2188,7 @@ describe("refresh ahead (Players and Store only)", () => {
     expect(results.every((r) => JSON.stringify(r) === JSON.stringify(cached))).toBe(true);
     await __testing.settleRefreshAhead();
     expect(state.calls).toBe(1);
-    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim").length).toBe(2);
+    expect(world.rpcCalls.filter((f) => f === "h2_get_or_claim_ahead").length).toBe(1);
     expect(__testing.refreshAheadSize()).toBe(0);
   });
 
