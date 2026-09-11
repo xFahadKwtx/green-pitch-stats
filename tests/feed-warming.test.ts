@@ -224,6 +224,7 @@ beforeEach(() => {
   airtableStatus = null;
   claimRejectName = null;
   claimStatusByKey = null;
+  loaderError = undefined;
   __testing.setMode("production");
   install();
 });
