@@ -655,7 +655,7 @@ describe("strict 900-second freshness correction", () => {
         await expect(getCachedPublicFeed(feed, mustNotLoad)).rejects.toThrow(FeedUnavailableError);
         expect(world.selectCalls).toBe(1);
         expect(world.airtableRequests).toEqual([]);
-        expect(world.rpcCalls).toEqual(Array(status === "busy" || status === "stale-window" ? 5 : 1).fill("h2_get_or_claim"));
+        expect(world.rpcCalls).toEqual(Array(status === "busy" || status === "stale-window" ? BUSY_RECHECK_ATTEMPTS + 1 : 1).fill("h2_get_or_claim"));
         expect(world.control).toEqual(controlBefore);
       });
 
