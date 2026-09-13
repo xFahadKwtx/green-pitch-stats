@@ -91,9 +91,10 @@ export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> 
       imageUrl: firstImageUrl(row.fields["Product Image"]),
     };
 
-    // Cards / Cashback live only in their dedicated section — never in the
-    // point-category sections.
-    const fixedSection = fixed.get(storeSection(row.fields["Store Section"]));
+    // Coupons (Cards/Coupons) and Cashback live only in their dedicated
+    // section — never in the point-category sections.
+    const key = fixedSectionKey(storeSection(row.fields["Store Section"]));
+    const fixedSection = key ? fixed.get(key) : undefined;
     if (fixedSection) {
       fixedSection.products.push(product);
       continue;
