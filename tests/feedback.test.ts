@@ -48,16 +48,14 @@ afterEach(() => {
 });
 
 describe("anonymous feedback", () => {
-  test("recipient is fixed server-side and baked into the endpoint", () => {
+  test("endpoint is the fixed provider form, recipient stays server-side", () => {
     expect(FEEDBACK_RECIPIENT).toBe("almustatilalakhdar@gmail.com");
-    expect(FEEDBACK_ENDPOINT).toBe(
-      "https://formsubmit.co/ajax/almustatilalakhdar@gmail.com",
-    );
+    expect(FEEDBACK_ENDPOINT).toBe("https://formspree.io/f/xkjnlqyn");
     expect(FEEDBACK_FORM_URL).toBe("https://almustatil.lovable.app/contact");
   });
 
   test("accepted submission reports receipt", async () => {
-    mockFetch(() => json({ success: "true", message: "The form has been submitted." }));
+    mockFetch(() => json({ ok: true, next: "https://formspree.io/thanks" }));
     const result = await submitFeedback({ message: "please add evening slots" });
     expect(result).toEqual({ ok: true, activationPending: false });
     expect(calls).toHaveLength(1);
@@ -65,20 +63,21 @@ describe("anonymous feedback", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
-  test("activation-required response is reported as pending, not delivered", async () => {
+  test("pending recipient verification is a failure, never a success", async () => {
     mockFetch(() =>
       json({
-        success: "false",
-        message:
-          "This form needs Activation. We've sent you an email containing an 'Activate Form' link.",
+        ok: false,
+        errors: [
+          { code: "EMAIL_NOT_VERIFIED", message: "Please verify your account email address" },
+        ],
       }),
     );
-    const result = await submitFeedback({ message: "activation" });
-    expect(result).toEqual({ ok: true, activationPending: true });
+    const result = await submitFeedback({ message: "unverified" });
+    expect(result).toEqual({ ok: false, reason: "provider_rejected" });
   });
 
   test("sends our own site origin, never visitor origin data", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     await submitFeedback(
       { message: "hello" },
       new Headers({ origin: "https://attacker.example", referer: "https://attacker.example/x" }),
