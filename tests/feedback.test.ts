@@ -48,16 +48,14 @@ afterEach(() => {
 });
 
 describe("anonymous feedback", () => {
-  test("recipient is fixed server-side and baked into the endpoint", () => {
+  test("endpoint is the fixed provider form, recipient stays server-side", () => {
     expect(FEEDBACK_RECIPIENT).toBe("almustatilalakhdar@gmail.com");
-    expect(FEEDBACK_ENDPOINT).toBe(
-      "https://formsubmit.co/ajax/almustatilalakhdar@gmail.com",
-    );
+    expect(FEEDBACK_ENDPOINT).toBe("https://formspree.io/f/xkjnlqyn");
     expect(FEEDBACK_FORM_URL).toBe("https://almustatil.lovable.app/contact");
   });
 
   test("accepted submission reports receipt", async () => {
-    mockFetch(() => json({ success: "true", message: "The form has been submitted." }));
+    mockFetch(() => json({ ok: true, next: "https://formspree.io/thanks" }));
     const result = await submitFeedback({ message: "please add evening slots" });
     expect(result).toEqual({ ok: true, activationPending: false });
     expect(calls).toHaveLength(1);
@@ -65,20 +63,21 @@ describe("anonymous feedback", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
-  test("activation-required response is reported as pending, not delivered", async () => {
+  test("pending recipient verification is a failure, never a success", async () => {
     mockFetch(() =>
       json({
-        success: "false",
-        message:
-          "This form needs Activation. We've sent you an email containing an 'Activate Form' link.",
+        ok: false,
+        errors: [
+          { code: "EMAIL_NOT_VERIFIED", message: "Please verify your account email address" },
+        ],
       }),
     );
-    const result = await submitFeedback({ message: "activation" });
-    expect(result).toEqual({ ok: true, activationPending: true });
+    const result = await submitFeedback({ message: "unverified" });
+    expect(result).toEqual({ ok: false, reason: "provider_rejected" });
   });
 
   test("sends our own site origin, never visitor origin data", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     await submitFeedback(
       { message: "hello" },
       new Headers({ origin: "https://attacker.example", referer: "https://attacker.example/x" }),
@@ -90,7 +89,7 @@ describe("anonymous feedback", () => {
   });
 
   test("sends only the message and fixed controls, no identifying metadata", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const headers = new Headers({
       "cf-connecting-ip": "203.0.113.9",
       "user-agent": "SecretBrowser/1.0",
@@ -99,13 +98,7 @@ describe("anonymous feedback", () => {
     });
     await submitFeedback({ message: "anonymous text" }, headers);
     const body = sentBody();
-    expect(Object.keys(body).sort()).toEqual([
-      "_captcha",
-      "_subject",
-      "_template",
-      "_url",
-      "message",
-    ]);
+    expect(Object.keys(body).sort()).toEqual(["_subject", "message"]);
     expect(body["message"]).toBe("anonymous text");
     expect(body["_subject"]).toBe(FEEDBACK_SUBJECT);
     const serialized = JSON.stringify(calls[0]);
@@ -116,21 +109,21 @@ describe("anonymous feedback", () => {
   });
 
   test("rejects empty and whitespace-only messages without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     expect(await submitFeedback({ message: "" })).toEqual({ ok: false, reason: "empty" });
     expect(await submitFeedback({ message: "   \n\t " })).toEqual({ ok: false, reason: "empty" });
     expect(calls).toHaveLength(0);
   });
 
   test("rejects oversize messages without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const result = await submitFeedback({ message: "a".repeat(FEEDBACK_MAX_LENGTH + 1) });
     expect(result).toEqual({ ok: false, reason: "too_long" });
     expect(calls).toHaveLength(0);
   });
 
   test("honeypot submissions are treated as spam without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     expect(await submitFeedback({ message: "hello", trap: "bot" })).toEqual({
       ok: false,
       reason: "spam",
@@ -144,14 +137,14 @@ describe("anonymous feedback", () => {
     );
   });
 
-  test("success false is a provider rejection, never a fake success", async () => {
-    mockFetch(() => json({ success: "false", message: "rejected" }));
+  test("ok false or an error array is a provider rejection, never a fake success", async () => {
+    mockFetch(() => json({ ok: false, errors: [{ message: "rejected" }] }));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
     });
     resetFeedbackLimits();
-    mockFetch(() => json({ success: false }));
+    mockFetch(() => json({ ok: true, errors: [{ message: "rejected" }] }));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
@@ -159,7 +152,7 @@ describe("anonymous feedback", () => {
   });
 
   test("HTTP error statuses are provider rejections", async () => {
-    mockFetch(() => json({ success: "true" }, 429));
+    mockFetch(() => json({ ok: true }, 429));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
@@ -193,7 +186,7 @@ describe("anonymous feedback", () => {
   });
 
   test("rate limits repeat senders from the same caller", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const headers = new Headers({ "cf-connecting-ip": "203.0.113.9" });
     const reasons: (string | "ok")[] = [];
     for (let i = 0; i < 4; i += 1) {

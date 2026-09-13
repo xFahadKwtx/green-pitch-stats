@@ -1,10 +1,10 @@
 /**
- * Anonymous suggestion / complaint delivery via FormSubmit (AJAX endpoint).
+ * Anonymous suggestion / complaint delivery via Formspree (JSON endpoint).
  *
  * Privacy rules enforced here:
- * - Only the visitor's message, a fixed subject and the canonical form URL are sent.
+ * - Only the visitor's message and a fixed subject are sent.
  * - No visitor identity, auth data, user agent, referrer or IP is forwarded or stored.
- * - The recipient address lives only in this server-only module, never in the browser.
+ * - The recipient address is configured in the provider's form, not sent by us.
  * - Rate limiting uses a crypto-random salted, truncated in-memory hash of the caller
  *   address; buckets are purged once expired so no pseudonym is retained.
  */
@@ -21,7 +21,7 @@ export const FEEDBACK_MIN_LENGTH = 1;
 export const FEEDBACK_MAX_LENGTH = 2000;
 export const FEEDBACK_SUBJECT = "اقتراح أو شكوى مجهولة — المستطيل الأخضر";
 export const FEEDBACK_FORM_URL = "https://almustatil.lovable.app/contact";
-export const FEEDBACK_ENDPOINT = `https://formsubmit.co/ajax/${FEEDBACK_RECIPIENT}`;
+export const FEEDBACK_ENDPOINT = "https://formspree.io/f/xkjnlqyn";
 export const FEEDBACK_SITE_ORIGIN = "https://almustatil.lovable.app";
 export const FEEDBACK_TIMEOUT_MS = 15_000;
 
@@ -118,20 +118,37 @@ export function sanitizeMessage(input: unknown): string {
     .trim();
 }
 
-function isTrue(value: unknown): boolean {
-  return value === true || (typeof value === "string" && value.toLowerCase() === "true");
+/** Strict success: the provider's JSON must carry ok === true and no errors. */
+function isAcceptedPayload(record: Record<string, unknown>): boolean {
+  if (record["ok"] !== true) return false;
+  const errors = record["errors"];
+  if (Array.isArray(errors) && errors.length > 0) return false;
+  return true;
 }
 
-/** Detects the provider's "form not activated yet" response. */
-function looksLikeActivation(message: unknown): boolean {
-  if (typeof message !== "string") return false;
-  const text = message.toLowerCase();
-  return (
-    text.includes("activat") ||
-    text.includes("confirm") ||
-    text.includes("verify") ||
-    text.includes("check your inbox")
-  );
+/**
+ * Collapses the provider's error array into text used transiently for
+ * classification only. Never logged, returned or retained.
+ */
+function errorText(record: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const errors = record["errors"];
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      if (entry && typeof entry === "object") {
+        const e = entry as Record<string, unknown>;
+        for (const key of ["code", "message", "field"]) {
+          if (typeof e[key] === "string") parts.push(e[key] as string);
+        }
+      } else if (typeof entry === "string") {
+        parts.push(entry);
+      }
+    }
+  }
+  for (const key of ["error", "message"]) {
+    if (typeof record[key] === "string") parts.push(record[key] as string);
+  }
+  return parts.join(" ").slice(0, 2048);
 }
 
 /** Coarse class of the upstream content type. No header value is ever logged. */
@@ -155,9 +172,10 @@ function contentClass(response: Response): FeedbackContentClass {
  */
 function classifyRejection(status: number, text: string, cls: FeedbackContentClass): FeedbackReasonCode {
   const t = text.toLowerCase();
-  if (t.includes("web server") || t.includes("through a web server")) return "origin_required";
-  if (looksLikeActivation(t)) return "activation_required";
-  if (t.includes("captcha")) return "captcha_required";
+  if (t.includes("verif") || t.includes("confirm your email") || t.includes("not confirmed")) {
+    return "verification_required";
+  }
+  if (t.includes("captcha") || t.includes("recaptcha") || t.includes("spam")) return "captcha_required";
   if (status === 429 || t.includes("rate limit") || t.includes("too many")) return "rate_limited";
   if (
     status === 403 ||
@@ -187,9 +205,6 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
   const body = {
     message,
     _subject: FEEDBACK_SUBJECT,
-    _template: "table",
-    _captcha: "false",
-    _url: FEEDBACK_FORM_URL,
   };
 
   const startedAt = Date.now();
@@ -269,15 +284,14 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
     return { ok: false, reason: "send_failed" };
   }
   const record = payload as Record<string, unknown>;
-  const activation = looksLikeActivation(record["message"]);
 
-  // The provider answers success:"false" with an activation notice until the
-  // mailbox owner confirms the form; the submission itself is stored (30 days).
-  if (!isTrue(record["success"]) && !activation) {
-    const detail = typeof record["message"] === "string" ? (record["message"] as string).slice(0, 2048) : "";
+  // Strict: only ok === true with no errors counts as accepted. Pending
+  // recipient verification, spam/captcha blocks and any error array are
+  // failures — never a false success.
+  if (!isAcceptedPayload(record)) {
     logFeedbackFailure({
       category: "provider-rejected",
-      code: classifyRejection(response.status, detail, cls),
+      code: classifyRejection(response.status, errorText(record), cls),
       status: response.status,
       contentClass: cls,
       elapsedMs: elapsed(),
@@ -286,7 +300,7 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
   }
 
   // Accepted receipt. Not proof of inbox delivery.
-  return { ok: true, activationPending: activation };
+  return { ok: true, activationPending: false };
 }
 
 

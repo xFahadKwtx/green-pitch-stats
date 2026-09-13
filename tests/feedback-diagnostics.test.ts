@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { resetFeedbackLimits, sendFeedbackEmail } from "../src/lib/feedback.server";
 
 const CANARY = "شكوى سرية من لاعب canary-secret-12345";
-const PROVIDER_TEXT = "Make sure you open this page through a web server, CORS requests are blocked";
+const PROVIDER_TEXT = "Please verify your account email address before receiving submissions";
 
 let logs: unknown[] = [];
 let errorSpy: { mockRestore: () => void } | undefined;
@@ -37,15 +37,17 @@ afterEach(() => {
 });
 
 describe("feedback failure diagnostics", () => {
-  test("maps the provider's web-server notice to origin_required", async () => {
-    stubFetch(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT }));
+  test("maps a pending email-verification rejection to verification_required", async () => {
+    stubFetch(async () =>
+      jsonResponse(200, { ok: false, errors: [{ code: "EMAIL_NOT_VERIFIED", message: PROVIDER_TEXT }] }),
+    );
     const result = await sendFeedbackEmail(CANARY);
     expect(result).toEqual({ ok: false, reason: "provider_rejected" });
     expect(logs).toHaveLength(1);
     const line = logs[0] as Record<string, unknown>;
     expect(line["event"]).toBe("feedback_submit_failure");
     expect(line["category"]).toBe("provider-rejected");
-    expect(line["code"]).toBe("origin_required");
+    expect(line["code"]).toBe("verification_required");
     expect(line["status"]).toBe(200);
     expect(line["contentClass"]).toBe("json");
     expect(typeof line["elapsedMs"]).toBe("number");
@@ -54,14 +56,14 @@ describe("feedback failure diagnostics", () => {
   });
 
   test("never leaks the message, recipient or upstream text", async () => {
-    stubFetch(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT }));
+    stubFetch(async () => jsonResponse(200, { ok: false, errors: [{ message: PROVIDER_TEXT }] }));
     await sendFeedbackEmail(CANARY);
     const dump = serialized();
     expect(dump).not.toContain("canary-secret-12345");
     expect(dump).not.toContain("شكوى");
     expect(dump).not.toContain("almustatilalakhdar");
-    expect(dump).not.toContain("formsubmit");
-    expect(dump).not.toContain("web server");
+    expect(dump).not.toContain("formspree");
+    expect(dump).not.toContain("verify your account");
     expect(Object.keys(logs[0] as object).sort()).toEqual([
       "at",
       "category",
@@ -92,28 +94,28 @@ describe("feedback failure diagnostics", () => {
     expect(serialized()).not.toContain("Cloudflare");
   });
 
-  test("classifies rate limiting, captcha, activation and invalid requests", async () => {
+  test("classifies rate limiting, spam blocks and invalid requests", async () => {
     const cases: Array<[Response, string, string]> = [
       [new Response("Too many requests", { status: 429 }), "rate_limited", "upstream-http"],
-      [jsonResponse(200, { success: "false", message: "Captcha verification failed" }), "captcha_required", "provider-rejected"],
       [
-        jsonResponse(200, { success: "false", message: "This form needs Activation. We've sent you an email" }),
-        "activation_required",
+        jsonResponse(200, { ok: false, errors: [{ code: "SPAM", message: "Blocked as spam" }] }),
+        "captcha_required",
         "provider-rejected",
       ],
-      [new Response("Bad request", { status: 400 }), "invalid_request", "upstream-http"],
+      [
+        jsonResponse(422, { errors: [{ field: "message", message: "Bad request" }] }),
+        "invalid_request",
+        "upstream-http",
+      ],
       [new Response("nope", { status: 500 }), "provider_rejected_unknown", "upstream-http"],
+      [jsonResponse(200, { ok: false }), "provider_rejected_unknown", "provider-rejected"],
     ];
     for (const [response, code, category] of cases) {
       logs = [];
       stubFetch(async () => response);
-      await sendFeedbackEmail("hello");
+      const result = await sendFeedbackEmail("hello");
+      expect(result).toEqual({ ok: false, reason: "provider_rejected" });
       const line = logs[0] as Record<string, unknown>;
-      // The activation notice is an accepted receipt, so no failure line is logged.
-      if (code === "activation_required") {
-        expect(logs).toHaveLength(0);
-        continue;
-      }
       expect(line["code"]).toBe(code);
       expect(line["category"]).toBe(category);
     }
@@ -145,7 +147,7 @@ describe("feedback failure diagnostics", () => {
   });
 
   test("logs nothing on a successful submission", async () => {
-    stubFetch(async () => jsonResponse(200, { success: "true", message: "ok" }));
+    stubFetch(async () => jsonResponse(200, { ok: true, next: "https://formspree.io/thanks" }));
     const result = await sendFeedbackEmail(CANARY);
     expect(result).toEqual({ ok: true, activationPending: false });
     expect(logs).toHaveLength(0);
