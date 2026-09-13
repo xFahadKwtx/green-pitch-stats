@@ -71,7 +71,7 @@ function callerKey(headers: Headers | undefined): string {
     headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "unknown";
   // Salted with a per-process random value + truncated: groups repeat senders only.
-  return createHash("sha256").update(`${salt}:${raw}`).digest("hex").slice(0, 16);
+  return createHash("sha256").update(`${getSalt()}:${raw}`).digest("hex").slice(0, 16);
 }
 
 /** True when the caller is inside both the per-caller and the global allowance. */
