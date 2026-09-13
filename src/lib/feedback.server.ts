@@ -17,6 +17,7 @@ export const FEEDBACK_MAX_LENGTH = 2000;
 export const FEEDBACK_SUBJECT = "اقتراح أو شكوى مجهولة — المستطيل الأخضر";
 export const FEEDBACK_FORM_URL = "https://almustatil.lovable.app/contact";
 export const FEEDBACK_ENDPOINT = `https://formsubmit.co/ajax/${FEEDBACK_RECIPIENT}`;
+export const FEEDBACK_SITE_ORIGIN = "https://almustatil.lovable.app";
 export const FEEDBACK_TIMEOUT_MS = 15_000;
 
 /** Per-window limits (in-memory only, per server instance). */
