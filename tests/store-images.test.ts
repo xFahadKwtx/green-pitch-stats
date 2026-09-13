@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import * as React from "react";
 import { getStorePrice } from "../src/lib/store-pricing";
+import { storeCategoryLabels } from "../src/lib/store-sections";
 import { contactInfo } from "../src/data/site";
 
 const require = createRequire(import.meta.url);
@@ -21,6 +22,7 @@ runInNewContext(code, { module, exports: module.exports, require: (name: string)
   if (name === "@tanstack/react-router") return { createFileRoute: () => (options: unknown) => options };
   if (name === "@/lib/i18n") return { useI18n: () => ({ lang, t: (key: string) => key }) };
   if (name === "@/lib/store-pricing") return { getStorePrice };
+  if (name === "@/lib/store-sections") return { storeCategoryLabels };
   if (name === "@/data/site") return { contactInfo };
   if (name === "lucide-react") return { ShoppingBag: "shopping-bag", Sparkles: "sparkles", ArrowUpRight: "arrow" };
   return {};
