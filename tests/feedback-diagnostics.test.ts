@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { resetFeedbackLimits, sendFeedbackEmail } from "../src/lib/feedback.server";
 
 const CANARY = "شكوى سرية من لاعب canary-secret-12345";
 const PROVIDER_TEXT = "Make sure you open this page through a web server, CORS requests are blocked";
 
 let logs: unknown[] = [];
+let errorSpy: { mockRestore: () => void } | undefined;
+const originalFetch = globalThis.fetch;
+
+function stubFetch(impl: () => Promise<Response>) {
+  globalThis.fetch = impl as unknown as typeof fetch;
+}
 
 function jsonResponse(status: number, payload: unknown) {
   return new Response(JSON.stringify(payload), {
@@ -20,18 +26,19 @@ function serialized(): string {
 beforeEach(() => {
   logs = [];
   resetFeedbackLimits();
-  vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+  errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     logs.push(...args);
   });
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  errorSpy?.mockRestore();
+  globalThis.fetch = originalFetch;
 });
 
 describe("feedback failure diagnostics", () => {
-  it("maps the provider's web-server notice to origin_required", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT })));
+  test("maps the provider's web-server notice to origin_required", async () => {
+    stubFetch(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT }));
     const result = await sendFeedbackEmail(CANARY);
     expect(result).toEqual({ ok: false, reason: "provider_rejected" });
     expect(logs).toHaveLength(1);
@@ -46,8 +53,8 @@ describe("feedback failure diagnostics", () => {
     expect(typeof line["ref"]).toBe("string");
   });
 
-  it("never leaks the message, recipient or upstream text", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT })));
+  test("never leaks the message, recipient or upstream text", async () => {
+    stubFetch(async () => jsonResponse(200, { success: "false", message: PROVIDER_TEXT }));
     await sendFeedbackEmail(CANARY);
     const dump = serialized();
     expect(dump).not.toContain("canary-secret-12345");
@@ -67,7 +74,7 @@ describe("feedback failure diagnostics", () => {
     ]);
   });
 
-  it("classifies an HTTP 403 HTML challenge as blocked_or_challenge", async () => {
+  test("classifies an HTTP 403 HTML challenge as blocked_or_challenge", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -88,7 +95,7 @@ describe("feedback failure diagnostics", () => {
     expect(serialized()).not.toContain("Cloudflare");
   });
 
-  it("classifies rate limiting, captcha, activation and invalid requests", async () => {
+  test("classifies rate limiting, captcha, activation and invalid requests", async () => {
     const cases: Array<[Response, string, string]> = [
       [new Response("Too many requests", { status: 429 }), "rate_limited", "upstream-http"],
       [jsonResponse(200, { success: "false", message: "Captcha verification failed" }), "captcha_required", "provider-rejected"],
@@ -102,7 +109,7 @@ describe("feedback failure diagnostics", () => {
     ];
     for (const [response, code, category] of cases) {
       logs = [];
-      vi.stubGlobal("fetch", vi.fn(async () => response));
+      stubFetch(async () => response);
       await sendFeedbackEmail("hello");
       const line = logs[0] as Record<string, unknown>;
       // The activation notice is an accepted receipt, so no failure line is logged.
@@ -115,11 +122,8 @@ describe("feedback failure diagnostics", () => {
     }
   });
 
-  it("logs invalid_json for an unparsable success response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("not json", { status: 200, headers: { "content-type": "application/json" } })),
-    );
+  test("logs invalid_json for an unparsable success response", async () => {
+    stubFetch(async () => new Response("not json", { status: 200, headers: { "content-type": "application/json" } }));
     const result = await sendFeedbackEmail("hello");
     expect(result).toEqual({ ok: false, reason: "send_failed" });
     const line = logs[0] as Record<string, unknown>;
@@ -127,24 +131,24 @@ describe("feedback failure diagnostics", () => {
     expect(line["code"]).toBe("invalid_json");
   });
 
-  it("logs fixed codes for timeouts and network errors", async () => {
+  test("logs fixed codes for timeouts and network errors", async () => {
     const timeout = Object.assign(new Error("aborted"), { name: "TimeoutError" });
-    vi.stubGlobal("fetch", vi.fn(async () => { throw timeout; }));
+    stubFetch(async () => { throw timeout; });
     await sendFeedbackEmail("hello");
     expect((logs[0] as Record<string, unknown>)["code"]).toBe("timeout");
     expect((logs[0] as Record<string, unknown>)["category"]).toBe("timeout");
     expect(serialized()).not.toContain("aborted");
 
     logs = [];
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("fetch failed to secret.host"); }));
+    stubFetch(async () => { throw new TypeError("fetch failed to secret.host"); });
     await sendFeedbackEmail("hello");
     expect((logs[0] as Record<string, unknown>)["code"]).toBe("network");
     expect((logs[0] as Record<string, unknown>)["category"]).toBe("network");
     expect(serialized()).not.toContain("secret.host");
   });
 
-  it("logs nothing on a successful submission", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { success: "true", message: "ok" })));
+  test("logs nothing on a successful submission", async () => {
+    stubFetch(async () => jsonResponse(200, { success: "true", message: "ok" }));
     const result = await sendFeedbackEmail(CANARY);
     expect(result).toEqual({ ok: true, activationPending: false });
     expect(logs).toHaveLength(0);
