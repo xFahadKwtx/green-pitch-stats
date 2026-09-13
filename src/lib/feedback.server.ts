@@ -205,9 +205,6 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
   const body = {
     message,
     _subject: FEEDBACK_SUBJECT,
-    _template: "table",
-    _captcha: "false",
-    _url: FEEDBACK_FORM_URL,
   };
 
   const startedAt = Date.now();
