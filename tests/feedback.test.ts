@@ -89,7 +89,7 @@ describe("anonymous feedback", () => {
   });
 
   test("sends only the message and fixed controls, no identifying metadata", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const headers = new Headers({
       "cf-connecting-ip": "203.0.113.9",
       "user-agent": "SecretBrowser/1.0",
@@ -98,13 +98,7 @@ describe("anonymous feedback", () => {
     });
     await submitFeedback({ message: "anonymous text" }, headers);
     const body = sentBody();
-    expect(Object.keys(body).sort()).toEqual([
-      "_captcha",
-      "_subject",
-      "_template",
-      "_url",
-      "message",
-    ]);
+    expect(Object.keys(body).sort()).toEqual(["_subject", "message"]);
     expect(body["message"]).toBe("anonymous text");
     expect(body["_subject"]).toBe(FEEDBACK_SUBJECT);
     const serialized = JSON.stringify(calls[0]);
