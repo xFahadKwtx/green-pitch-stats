@@ -1,10 +1,10 @@
 /**
- * Anonymous suggestion / complaint delivery via FormSubmit (AJAX endpoint).
+ * Anonymous suggestion / complaint delivery via Formspree (JSON endpoint).
  *
  * Privacy rules enforced here:
- * - Only the visitor's message, a fixed subject and the canonical form URL are sent.
+ * - Only the visitor's message and a fixed subject are sent.
  * - No visitor identity, auth data, user agent, referrer or IP is forwarded or stored.
- * - The recipient address lives only in this server-only module, never in the browser.
+ * - The recipient address is configured in the provider's form, not sent by us.
  * - Rate limiting uses a crypto-random salted, truncated in-memory hash of the caller
  *   address; buckets are purged once expired so no pseudonym is retained.
  */
@@ -21,7 +21,7 @@ export const FEEDBACK_MIN_LENGTH = 1;
 export const FEEDBACK_MAX_LENGTH = 2000;
 export const FEEDBACK_SUBJECT = "اقتراح أو شكوى مجهولة — المستطيل الأخضر";
 export const FEEDBACK_FORM_URL = "https://almustatil.lovable.app/contact";
-export const FEEDBACK_ENDPOINT = `https://formsubmit.co/ajax/${FEEDBACK_RECIPIENT}`;
+export const FEEDBACK_ENDPOINT = "https://formspree.io/f/xkjnlqyn";
 export const FEEDBACK_SITE_ORIGIN = "https://almustatil.lovable.app";
 export const FEEDBACK_TIMEOUT_MS = 15_000;
 
