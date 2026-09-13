@@ -99,6 +99,11 @@ export function resetFeedbackLimits() {
   globalHits.length = 0;
 }
 
+/** Test-only: whether the per-isolate salt has been lazily initialized yet. */
+export function hasActiveSalt(): boolean {
+  return salt !== undefined;
+}
+
 /** Strips control characters that could be used for header/content injection. */
 export function sanitizeMessage(input: unknown): string {
   if (typeof input !== "string") return "";
