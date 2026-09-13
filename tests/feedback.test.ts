@@ -68,12 +68,25 @@ describe("anonymous feedback", () => {
   test("activation-required response is reported as pending, not delivered", async () => {
     mockFetch(() =>
       json({
-        success: "true",
-        message: "Please check your inbox and confirm your email address.",
+        success: "false",
+        message:
+          "This form needs Activation. We've sent you an email containing an 'Activate Form' link.",
       }),
     );
     const result = await submitFeedback({ message: "activation" });
     expect(result).toEqual({ ok: true, activationPending: true });
+  });
+
+  test("sends our own site origin, never visitor origin data", async () => {
+    mockFetch(() => json({ success: true }));
+    await submitFeedback(
+      { message: "hello" },
+      new Headers({ origin: "https://attacker.example", referer: "https://attacker.example/x" }),
+    );
+    const headers = calls[0]!.init.headers as Record<string, string>;
+    expect(headers["Origin"]).toBe("https://almustatil.lovable.app");
+    expect(headers["Referer"]).toBe(FEEDBACK_FORM_URL);
+    expect(JSON.stringify(calls[0])).not.toContain("attacker.example");
   });
 
   test("sends only the message and fixed controls, no identifying metadata", async () => {
