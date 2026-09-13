@@ -1,18 +1,23 @@
 /**
- * Anonymous suggestion / complaint delivery.
+ * Anonymous suggestion / complaint delivery via FormSubmit (AJAX endpoint).
  *
  * Privacy rules enforced here:
- * - The email body contains only the visitor's message plus a server timestamp.
- * - No visitor identity, auth data, user agent, or raw IP is ever included or stored.
- * - Rate limiting uses a salted, truncated in-memory hash of the caller address,
- *   which is never persisted and cannot be reversed into an address.
+ * - Only the visitor's message, a fixed subject and the canonical form URL are sent.
+ * - No visitor identity, auth data, user agent, referrer or IP is forwarded or stored.
+ * - The recipient address lives only in this server-only module, never in the browser.
+ * - Rate limiting uses a crypto-random salted, truncated in-memory hash of the caller
+ *   address; buckets are purged once expired so no pseudonym is retained.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export const FEEDBACK_RECIPIENT = "almustatilalakhdar@gmail.com";
 export const FEEDBACK_MIN_LENGTH = 1;
 export const FEEDBACK_MAX_LENGTH = 2000;
+export const FEEDBACK_SUBJECT = "اقتراح أو شكوى مجهولة — المستطيل الأخضر";
+export const FEEDBACK_FORM_URL = "https://almustatil.lovable.app/contact";
+export const FEEDBACK_ENDPOINT = `https://formsubmit.co/ajax/${FEEDBACK_RECIPIENT}`;
+export const FEEDBACK_TIMEOUT_MS = 15_000;
 
 /** Per-window limits (in-memory only, per server instance). */
 const WINDOW_MS = 10 * 60 * 1000;
@@ -25,17 +30,27 @@ export type FeedbackFailure =
   | "too_long"
   | "rate_limited"
   | "spam"
-  | "email_not_configured"
+  | "provider_rejected"
   | "send_failed";
 
-export type FeedbackResult = { ok: true } | { ok: false; reason: FeedbackFailure };
+export type FeedbackResult =
+  | { ok: true; activationPending: boolean }
+  | { ok: false; reason: FeedbackFailure };
 
 const buckets = new Map<string, number[]>();
 const globalHits: number[] = [];
-const salt = createHash("sha256").update(`maa-feedback-${process.uptime()}`).digest("hex");
+const salt = randomBytes(32).toString("hex");
 
 function prune(list: number[], now: number, windowMs: number) {
   while (list.length > 0 && now - list[0]! > windowMs) list.shift();
+}
+
+/** Drops fully expired buckets so hashed caller keys are not retained. */
+function purgeBuckets(now: number) {
+  for (const [key, list] of buckets) {
+    prune(list, now, WINDOW_MS);
+    if (list.length === 0) buckets.delete(key);
+  }
 }
 
 function callerKey(headers: Headers | undefined): string {
@@ -44,12 +59,13 @@ function callerKey(headers: Headers | undefined): string {
     headers?.get("x-real-ip") ??
     headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "unknown";
-  // Salted + truncated: enough to group repeat senders, never a stored address.
+  // Salted with a per-process random value + truncated: groups repeat senders only.
   return createHash("sha256").update(`${salt}:${raw}`).digest("hex").slice(0, 16);
 }
 
 /** True when the caller is inside both the per-caller and the global allowance. */
 export function allowFeedback(headers?: Headers, now = Date.now()): boolean {
+  purgeBuckets(now);
   prune(globalHits, now, GLOBAL_WINDOW_MS);
   if (globalHits.length >= MAX_GLOBAL_PER_WINDOW) return false;
 
@@ -72,7 +88,7 @@ export function resetFeedbackLimits() {
   globalHits.length = 0;
 }
 
-/** Strips control characters that could be used for header injection. */
+/** Strips control characters that could be used for header/content injection. */
 export function sanitizeMessage(input: unknown): string {
   if (typeof input !== "string") return "";
   return input
@@ -81,51 +97,68 @@ export function sanitizeMessage(input: unknown): string {
     .trim();
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function isTrue(value: unknown): boolean {
+  return value === true || (typeof value === "string" && value.toLowerCase() === "true");
+}
+
+/** Detects the provider's "confirm your email first" response. */
+function looksLikeActivation(message: unknown): boolean {
+  if (typeof message !== "string") return false;
+  const text = message.toLowerCase();
+  return (
+    text.includes("confirm") ||
+    text.includes("activat") ||
+    text.includes("verify") ||
+    text.includes("inbox")
+  );
 }
 
 /**
- * Sends the anonymous message to the single fixed recipient.
+ * Posts the anonymous message to the single fixed recipient's form endpoint.
  * The recipient is never accepted from the caller.
  */
 export async function sendFeedbackEmail(message: string): Promise<FeedbackResult> {
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  const senderDomain = process.env["EMAIL_SENDER_DOMAIN"];
-  if (!apiKey || !senderDomain) return { ok: false, reason: "email_not_configured" };
+  const body = {
+    message,
+    _subject: FEEDBACK_SUBJECT,
+    _template: "table",
+    _captcha: "false",
+    _url: FEEDBACK_FORM_URL,
+  };
 
-  const sentAt = new Date().toISOString();
-  const text = `Anonymous suggestion / complaint\nReceived: ${sentAt}\n\n${message}\n`;
-  const html = `<p><strong>Anonymous suggestion / complaint</strong></p><p>Received: ${escapeHtml(
-    sentAt,
-  )}</p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(message)}</pre>`;
-
+  let response: Response;
   try {
-    const { sendLovableEmail } = await import("@lovable.dev/email-js");
-    await sendLovableEmail(
-      {
-        to: FEEDBACK_RECIPIENT,
-        from: `Al-Mustatil Al-Akhdar <noreply@${senderDomain}>`,
-        sender_domain: senderDomain,
-        subject: "Anonymous suggestion / complaint",
-        text,
-        html,
-      },
-      { apiKey },
-    );
-    return { ok: true };
+    response = await fetch(FEEDBACK_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
+      referrerPolicy: "no-referrer",
+    });
   } catch {
-    // Never surface upstream detail to the visitor.
+    // Network failure or timeout. Never surface upstream detail to the visitor.
     return { ok: false, reason: "send_failed" };
   }
+
+  if (!response.ok) return { ok: false, reason: "provider_rejected" };
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return { ok: false, reason: "send_failed" };
+  }
+
+  if (!payload || typeof payload !== "object") return { ok: false, reason: "send_failed" };
+  const record = payload as Record<string, unknown>;
+  if (!isTrue(record["success"])) return { ok: false, reason: "provider_rejected" };
+
+  // Accepted. Until the mailbox owner confirms the form, the provider only stores
+  // the submission — so this is receipt, not proven inbox delivery.
+  return { ok: true, activationPending: looksLikeActivation(record["message"]) };
 }
 
-/** Full server-side pipeline: validate, spam-check, rate-limit, send. */
+/** Full server-side pipeline: validate, spam-check, rate-limit, submit. */
 export async function submitFeedback(
   input: { message: unknown; trap?: unknown },
   headers?: Headers,

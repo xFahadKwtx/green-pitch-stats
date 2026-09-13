@@ -11,10 +11,12 @@ export type FeedbackReason =
   | "too_long"
   | "rate_limited"
   | "spam"
-  | "email_not_configured"
+  | "provider_rejected"
   | "send_failed";
 
-export type FeedbackResponse = { ok: true } | { ok: false; reason: FeedbackReason };
+export type FeedbackResponse =
+  | { ok: true; activationPending: boolean }
+  | { ok: false; reason: FeedbackReason };
 
 /** Anonymous suggestion / complaint submission. Recipient is fixed server-side. */
 export const sendFeedback = createServerFn({ method: "POST" })
