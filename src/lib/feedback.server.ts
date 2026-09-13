@@ -172,9 +172,10 @@ function contentClass(response: Response): FeedbackContentClass {
  */
 function classifyRejection(status: number, text: string, cls: FeedbackContentClass): FeedbackReasonCode {
   const t = text.toLowerCase();
-  if (t.includes("web server") || t.includes("through a web server")) return "origin_required";
-  if (looksLikeActivation(t)) return "activation_required";
-  if (t.includes("captcha")) return "captcha_required";
+  if (t.includes("verif") || t.includes("confirm your email") || t.includes("not confirmed")) {
+    return "verification_required";
+  }
+  if (t.includes("captcha") || t.includes("recaptcha") || t.includes("spam")) return "captcha_required";
   if (status === 429 || t.includes("rate limit") || t.includes("too many")) return "rate_limited";
   if (
     status === 403 ||
