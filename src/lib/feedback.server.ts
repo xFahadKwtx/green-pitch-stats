@@ -40,7 +40,17 @@ export type FeedbackResult =
 
 const buckets = new Map<string, number[]>();
 const globalHits: number[] = [];
-const salt = randomBytes(32).toString("hex");
+
+/**
+ * Per-isolate random salt. Created lazily on first request: the serverless
+ * runtime forbids randomness during module evaluation, so this must never run
+ * at module scope. Stable for the life of the isolate once initialized.
+ */
+let salt: string | undefined;
+function getSalt(): string {
+  if (salt === undefined) salt = randomBytes(32).toString("hex");
+  return salt;
+}
 
 function prune(list: number[], now: number, windowMs: number) {
   while (list.length > 0 && now - list[0]! > windowMs) list.shift();
@@ -61,7 +71,7 @@ function callerKey(headers: Headers | undefined): string {
     headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "unknown";
   // Salted with a per-process random value + truncated: groups repeat senders only.
-  return createHash("sha256").update(`${salt}:${raw}`).digest("hex").slice(0, 16);
+  return createHash("sha256").update(`${getSalt()}:${raw}`).digest("hex").slice(0, 16);
 }
 
 /** True when the caller is inside both the per-caller and the global allowance. */
@@ -87,6 +97,11 @@ export function allowFeedback(headers?: Headers, now = Date.now()): boolean {
 export function resetFeedbackLimits() {
   buckets.clear();
   globalHits.length = 0;
+}
+
+/** Test-only: whether the per-isolate salt has been lazily initialized yet. */
+export function hasActiveSalt(): boolean {
+  return salt !== undefined;
 }
 
 /** Strips control characters that could be used for header/content injection. */
