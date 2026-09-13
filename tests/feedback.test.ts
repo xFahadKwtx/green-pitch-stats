@@ -109,21 +109,21 @@ describe("anonymous feedback", () => {
   });
 
   test("rejects empty and whitespace-only messages without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     expect(await submitFeedback({ message: "" })).toEqual({ ok: false, reason: "empty" });
     expect(await submitFeedback({ message: "   \n\t " })).toEqual({ ok: false, reason: "empty" });
     expect(calls).toHaveLength(0);
   });
 
   test("rejects oversize messages without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const result = await submitFeedback({ message: "a".repeat(FEEDBACK_MAX_LENGTH + 1) });
     expect(result).toEqual({ ok: false, reason: "too_long" });
     expect(calls).toHaveLength(0);
   });
 
   test("honeypot submissions are treated as spam without calling the provider", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     expect(await submitFeedback({ message: "hello", trap: "bot" })).toEqual({
       ok: false,
       reason: "spam",
@@ -137,14 +137,14 @@ describe("anonymous feedback", () => {
     );
   });
 
-  test("success false is a provider rejection, never a fake success", async () => {
-    mockFetch(() => json({ success: "false", message: "rejected" }));
+  test("ok false or an error array is a provider rejection, never a fake success", async () => {
+    mockFetch(() => json({ ok: false, errors: [{ message: "rejected" }] }));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
     });
     resetFeedbackLimits();
-    mockFetch(() => json({ success: false }));
+    mockFetch(() => json({ ok: true, errors: [{ message: "rejected" }] }));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
@@ -152,7 +152,7 @@ describe("anonymous feedback", () => {
   });
 
   test("HTTP error statuses are provider rejections", async () => {
-    mockFetch(() => json({ success: "true" }, 429));
+    mockFetch(() => json({ ok: true }, 429));
     expect(await submitFeedback({ message: "valid message" })).toEqual({
       ok: false,
       reason: "provider_rejected",
@@ -186,7 +186,7 @@ describe("anonymous feedback", () => {
   });
 
   test("rate limits repeat senders from the same caller", async () => {
-    mockFetch(() => json({ success: true }));
+    mockFetch(() => json({ ok: true }));
     const headers = new Headers({ "cf-connecting-ip": "203.0.113.9" });
     const reasons: (string | "ok")[] = [];
     for (let i = 0; i < 4; i += 1) {
