@@ -214,7 +214,7 @@ function StorePage() {
   return (
     <PageShell>
       <PageHeader eyebrow={t("brand")} title={t("store.title")} subtitle={t("store.sub")} />
-      <div className="glass-card mb-6 p-4 sm:p-5">
+      <div className="mb-6 inline-flex w-fit max-w-full items-center rounded-full border border-border bg-glass p-1.5">
         <a
           href={`https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent("السلام عليكم، أرغب باستخدام ميزة Freeze 🧊")}`}
           target="_blank"
