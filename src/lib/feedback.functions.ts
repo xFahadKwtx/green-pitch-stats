@@ -26,7 +26,7 @@ export const sendFeedback = createServerFn({ method: "POST" })
     const { submitFeedback } = await import("./feedback.server");
     let headers: Headers | undefined;
     try {
-      headers = new Headers(getRequestHeaders() as Record<string, string>);
+      headers = getRequestHeaders() as unknown as Headers;
     } catch {
       headers = undefined;
     }
