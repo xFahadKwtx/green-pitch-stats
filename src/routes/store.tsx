@@ -93,11 +93,11 @@ function PriceTag({
 
   if (price.discounted) {
     return (
-      <span className="flex flex-col gap-1 leading-tight">
-        <span className="text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm">
+      <span className={lang === "en" ? "flex flex-col gap-1 whitespace-nowrap leading-tight" : "flex flex-col gap-1 leading-tight"}>
+        <span className={lang === "en" ? "text-[11px] font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-xs" : "text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm"}>
           {pointsLabel(price.originalPoints, lang)}
         </span>
-        <span className="stat-number text-xl text-gold sm:text-2xl">
+        <span className={lang === "en" ? "stat-number text-lg text-gold sm:text-xl" : "stat-number text-xl text-gold sm:text-2xl"}>
           {pointsLabel(price.effectivePoints, lang)}
         </span>
       </span>
@@ -105,7 +105,7 @@ function PriceTag({
   }
 
   return (
-    <span className="stat-number whitespace-nowrap text-xl text-gold sm:text-2xl">
+    <span className={lang === "en" ? "stat-number whitespace-nowrap text-lg text-gold sm:text-xl" : "stat-number whitespace-nowrap text-xl text-gold sm:text-2xl"}>
       {pointsLabel(price.effectivePoints, lang)}
     </span>
   );
@@ -152,8 +152,8 @@ function ProductCard({ product }: { product: StoreItem }) {
           ) : null}
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <span className="min-w-0 shrink-0">
+        <div className={lang === "en" ? "mt-auto flex flex-nowrap items-center justify-between gap-2 border-t border-border pt-3" : "mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"}>
+          <span className={lang === "en" ? "min-w-0 flex-1" : "min-w-0 shrink-0"}>
             <PriceTag price={price} variant="full" />
           </span>
           {href ? (
@@ -161,7 +161,7 @@ function ProductCard({ product }: { product: StoreItem }) {
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+              className={lang === "en" ? "inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-full bg-gold px-2.5 text-xs font-bold whitespace-nowrap text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5" : "inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"}
             >
               {t("store.order")}
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
@@ -170,7 +170,7 @@ function ProductCard({ product }: { product: StoreItem }) {
             <button
               type="button"
               disabled
-              className="inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground opacity-50"
+              className={lang === "en" ? "inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1 rounded-full bg-gold px-2.5 text-xs font-bold whitespace-nowrap text-primary-foreground opacity-50" : "inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground opacity-50"}
             >
               {t("store.order")}
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
