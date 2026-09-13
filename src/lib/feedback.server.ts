@@ -101,15 +101,15 @@ function isTrue(value: unknown): boolean {
   return value === true || (typeof value === "string" && value.toLowerCase() === "true");
 }
 
-/** Detects the provider's "confirm your email first" response. */
+/** Detects the provider's "form not activated yet" response. */
 function looksLikeActivation(message: unknown): boolean {
   if (typeof message !== "string") return false;
   const text = message.toLowerCase();
   return (
-    text.includes("confirm") ||
     text.includes("activat") ||
+    text.includes("confirm") ||
     text.includes("verify") ||
-    text.includes("inbox")
+    text.includes("check your inbox")
   );
 }
 
@@ -130,7 +130,14 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
   try {
     response = await fetch(FEEDBACK_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        // Our own site identity, required by the provider to accept the submission.
+        // Never the visitor's own origin, referrer, address or user agent.
+        Origin: FEEDBACK_SITE_ORIGIN,
+        Referer: FEEDBACK_FORM_URL,
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
       referrerPolicy: "no-referrer",
@@ -151,12 +158,18 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
 
   if (!payload || typeof payload !== "object") return { ok: false, reason: "send_failed" };
   const record = payload as Record<string, unknown>;
-  if (!isTrue(record["success"])) return { ok: false, reason: "provider_rejected" };
+  const activation = looksLikeActivation(record["message"]);
 
-  // Accepted. Until the mailbox owner confirms the form, the provider only stores
-  // the submission — so this is receipt, not proven inbox delivery.
-  return { ok: true, activationPending: looksLikeActivation(record["message"]) };
+  // The provider answers success:"false" with an activation notice until the
+  // mailbox owner confirms the form; the submission itself is stored (30 days).
+  if (!isTrue(record["success"]) && !activation) {
+    return { ok: false, reason: "provider_rejected" };
+  }
+
+  // Accepted receipt. Not proof of inbox delivery.
+  return { ok: true, activationPending: activation };
 }
+
 
 /** Full server-side pipeline: validate, spam-check, rate-limit, submit. */
 export async function submitFeedback(
