@@ -10,6 +10,7 @@ import { contactInfo } from "@/data/site";
 import { useI18n } from "@/lib/i18n";
 import { storeQueryOptions } from "@/lib/store-query";
 import { getStorePrice, type StorePrice } from "@/lib/store-pricing";
+import { storeCategoryLabels } from "@/lib/store-sections";
 import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/store")({
@@ -183,7 +184,8 @@ function ProductCard({ product }: { product: StoreItem }) {
 
 function CategorySection({ category }: { category: StoreCategorySection }) {
   const { lang } = useI18n();
-  const name = lang === "ar" ? category.nameAr || category.nameEn : category.nameEn || category.nameAr;
+  const labels = storeCategoryLabels(category);
+  const name = lang === "ar" ? labels.nameAr || labels.nameEn : labels.nameEn || labels.nameAr;
 
   return (
     <section aria-labelledby={`store-category-${category.id}`} className="space-y-4 sm:space-y-5">
