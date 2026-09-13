@@ -10,6 +10,11 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import {
+  logFeedbackFailure,
+  type FeedbackContentClass,
+  type FeedbackReasonCode,
+} from "./server-diagnostics.server";
 
 export const FEEDBACK_RECIPIENT = "almustatilalakhdar@gmail.com";
 export const FEEDBACK_MIN_LENGTH = 1;
@@ -129,6 +134,51 @@ function looksLikeActivation(message: unknown): boolean {
   );
 }
 
+/** Coarse class of the upstream content type. No header value is ever logged. */
+function contentClass(response: Response): FeedbackContentClass {
+  let raw: string | null = null;
+  try {
+    raw = response.headers.get("content-type");
+  } catch {
+    raw = null;
+  }
+  if (!raw) return "none";
+  const value = raw.toLowerCase();
+  if (value.includes("json")) return "json";
+  if (value.includes("html")) return "html";
+  return "other";
+}
+
+/**
+ * Maps a transiently inspected upstream response to one fixed reason code.
+ * The inspected text is never logged, returned or retained.
+ */
+function classifyRejection(status: number, text: string, cls: FeedbackContentClass): FeedbackReasonCode {
+  const t = text.toLowerCase();
+  if (t.includes("web server") || t.includes("through a web server")) return "origin_required";
+  if (looksLikeActivation(t)) return "activation_required";
+  if (t.includes("captcha")) return "captcha_required";
+  if (status === 429 || t.includes("rate limit") || t.includes("too many")) return "rate_limited";
+  if (
+    status === 403 ||
+    status === 503 ||
+    (cls === "html" && (t.includes("cloudflare") || t.includes("attention required") || t.includes("challenge")))
+  ) {
+    return "blocked_or_challenge";
+  }
+  if (status === 400 || status === 404 || status === 422) return "invalid_request";
+  return "provider_rejected_unknown";
+}
+
+/** Bounded, transient read of the upstream body purely for classification. */
+async function boundedText(response: Response): Promise<string> {
+  try {
+    return (await response.text()).slice(0, 2048);
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Posts the anonymous message to the single fixed recipient's form endpoint.
  * The recipient is never accepted from the caller.
@@ -141,6 +191,9 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
     _captcha: "false",
     _url: FEEDBACK_FORM_URL,
   };
+
+  const startedAt = Date.now();
+  const elapsed = () => Date.now() - startedAt;
 
   let response: Response;
   try {
@@ -158,27 +211,77 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
       signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
       referrerPolicy: "no-referrer",
     });
-  } catch {
+  } catch (error) {
     // Network failure or timeout. Never surface upstream detail to the visitor.
+    let name: unknown = null;
+    try {
+      name = error && typeof error === "object" ? (error as { name?: unknown }).name : null;
+    } catch {
+      name = null;
+    }
+    const timedOut = name === "TimeoutError" || name === "AbortError";
+    logFeedbackFailure({
+      category: timedOut ? "timeout" : "network",
+      code: timedOut ? "timeout" : "network",
+      status: null,
+      contentClass: "none",
+      elapsedMs: elapsed(),
+    });
     return { ok: false, reason: "send_failed" };
   }
 
-  if (!response.ok) return { ok: false, reason: "provider_rejected" };
+  const cls = contentClass(response);
+
+  if (!response.ok) {
+    const text = await boundedText(response);
+    logFeedbackFailure({
+      category: "upstream-http",
+      code: classifyRejection(response.status, text, cls),
+      status: response.status,
+      contentClass: cls,
+      elapsedMs: elapsed(),
+    });
+    return { ok: false, reason: "provider_rejected" };
+  }
 
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
+    logFeedbackFailure({
+      category: "invalid-response",
+      code: "invalid_json",
+      status: response.status,
+      contentClass: cls,
+      elapsedMs: elapsed(),
+    });
     return { ok: false, reason: "send_failed" };
   }
 
-  if (!payload || typeof payload !== "object") return { ok: false, reason: "send_failed" };
+  if (!payload || typeof payload !== "object") {
+    logFeedbackFailure({
+      category: "invalid-response",
+      code: "invalid_json",
+      status: response.status,
+      contentClass: cls,
+      elapsedMs: elapsed(),
+    });
+    return { ok: false, reason: "send_failed" };
+  }
   const record = payload as Record<string, unknown>;
   const activation = looksLikeActivation(record["message"]);
 
   // The provider answers success:"false" with an activation notice until the
   // mailbox owner confirms the form; the submission itself is stored (30 days).
   if (!isTrue(record["success"]) && !activation) {
+    const detail = typeof record["message"] === "string" ? (record["message"] as string).slice(0, 2048) : "";
+    logFeedbackFailure({
+      category: "provider-rejected",
+      code: classifyRejection(response.status, detail, cls),
+      status: response.status,
+      contentClass: cls,
+      elapsedMs: elapsed(),
+    });
     return { ok: false, reason: "provider_rejected" };
   }
 
