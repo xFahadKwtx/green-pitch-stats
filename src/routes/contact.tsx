@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Instagram, MessageCircle, Music2, Users } from "lucide-react";
+import { Instagram, MessageCircle, Music2, Send, Users } from "lucide-react";
 
+import { AnonymousFeedback } from "@/components/anonymous-feedback";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import { contactInfo } from "@/data/site";
 import { useI18n } from "@/lib/i18n";
