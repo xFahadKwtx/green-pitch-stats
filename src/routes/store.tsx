@@ -49,12 +49,18 @@ function pointsLabel(points: number, lang: "en" | "ar") {
 
 function orderLink(product: StoreItem, price: StorePrice | null, lang: "en" | "ar") {
   if (!price) return null;
-  const productName = lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
+  const productName =
+    lang === "ar" ? product.nameAr || product.nameEn : product.nameEn || product.nameAr;
   const points = pointsLabel(price.effectivePoints, lang);
   const message =
     lang === "ar"
       ? ["السلام عليكم، أرغب بهذا المنتج:", "", productName, `النقاط المطلوبة: ${points}`]
-      : ["Hello, I would like to order this product:", "", productName, `Required Points: ${points}`];
+      : [
+          "Hello, I would like to order this product:",
+          "",
+          productName,
+          `Required Points: ${points}`,
+        ];
 
   return `https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent(message.join("\n"))}`;
 }
@@ -65,13 +71,7 @@ function orderLink(product: StoreItem, price: StorePrice | null, lang: "en" | "a
  * - Discount: shows the original Required Points with a red strikethrough and
  *   the Discount Points value next to it, more visually prominent.
  */
-function PriceTag({
-  price,
-  variant,
-}: {
-  price: StorePrice | null;
-  variant: "badge" | "full";
-}) {
+function PriceTag({ price, variant }: { price: StorePrice | null; variant: "badge" | "full" }) {
   const { lang } = useI18n();
   if (!price) {
     return (
@@ -93,11 +93,29 @@ function PriceTag({
 
   if (price.discounted) {
     return (
-      <span className="flex flex-col gap-1 leading-tight">
-        <span className="text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm">
+      <span
+        className={
+          lang === "en"
+            ? "flex flex-col gap-1 whitespace-nowrap leading-tight"
+            : "flex flex-col gap-1 leading-tight"
+        }
+      >
+        <span
+          className={
+            lang === "en"
+              ? "text-[11px] font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-xs"
+              : "text-xs font-semibold text-muted-foreground line-through decoration-red-500 decoration-2 sm:text-sm"
+          }
+        >
           {pointsLabel(price.originalPoints, lang)}
         </span>
-        <span className="stat-number text-xl text-gold sm:text-2xl">
+        <span
+          className={
+            lang === "en"
+              ? "stat-number text-lg text-gold sm:text-xl"
+              : "stat-number text-xl text-gold sm:text-2xl"
+          }
+        >
           {pointsLabel(price.effectivePoints, lang)}
         </span>
       </span>
@@ -105,7 +123,13 @@ function PriceTag({
   }
 
   return (
-    <span className="stat-number whitespace-nowrap text-xl text-gold sm:text-2xl">
+    <span
+      className={
+        lang === "en"
+          ? "stat-number whitespace-nowrap text-lg text-gold sm:text-xl"
+          : "stat-number whitespace-nowrap text-xl text-gold sm:text-2xl"
+      }
+    >
       {pointsLabel(price.effectivePoints, lang)}
     </span>
   );
@@ -138,7 +162,11 @@ function ProductCard({ product }: { product: StoreItem }) {
   return (
     <article className="glass-card group flex h-full flex-col overflow-hidden transition-transform duration-300 hover:-translate-y-1 hover:border-gold/40">
       <div className="relative aspect-square overflow-hidden border-b border-border bg-glass">
-        <ProductImage key={`${product.id}-${product.imageUrl}`} url={product.imageUrl} name={name} />
+        <ProductImage
+          key={`${product.id}-${product.imageUrl}`}
+          url={product.imageUrl}
+          name={name}
+        />
         <span className="absolute top-2 end-2 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-background/80 px-2.5 py-1 text-[11px] font-bold text-gold backdrop-blur-sm">
           <PriceTag price={price} variant="badge" />
         </span>
@@ -148,12 +176,20 @@ function ProductCard({ product }: { product: StoreItem }) {
         <div>
           <h3 className="text-lg font-bold leading-tight sm:text-xl">{name}</h3>
           {description ? (
-            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{description}</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              {description}
+            </p>
           ) : null}
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <span className="min-w-0 shrink-0">
+        <div
+          className={
+            lang === "en"
+              ? "mt-auto flex flex-nowrap items-center justify-between gap-2 border-t border-border pt-3"
+              : "mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"
+          }
+        >
+          <span className={lang === "en" ? "min-w-0 flex-1" : "min-w-0 shrink-0"}>
             <PriceTag price={price} variant="full" />
           </span>
           {href ? (
@@ -161,7 +197,11 @@ function ProductCard({ product }: { product: StoreItem }) {
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+              className={
+                lang === "en"
+                  ? "inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-full bg-gold px-2.5 text-xs font-bold whitespace-nowrap text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+                  : "inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold transition-transform hover:-translate-y-0.5"
+              }
             >
               {t("store.order")}
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
@@ -170,7 +210,11 @@ function ProductCard({ product }: { product: StoreItem }) {
             <button
               type="button"
               disabled
-              className="inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground opacity-50"
+              className={
+                lang === "en"
+                  ? "inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1 rounded-full bg-gold px-2.5 text-xs font-bold whitespace-nowrap text-primary-foreground opacity-50"
+                  : "inline-flex min-h-10 shrink-0 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground opacity-50"
+              }
             >
               {t("store.order")}
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
@@ -191,7 +235,10 @@ function CategorySection({ category }: { category: StoreCategorySection }) {
     <section aria-labelledby={`store-category-${category.id}`} className="space-y-4 sm:space-y-5">
       <div className="flex items-center gap-3 border-b border-border pb-3">
         <span className="h-6 w-1.5 rounded-full bg-gold" aria-hidden />
-        <h2 id={`store-category-${category.id}`} className="text-2xl font-bold tracking-tight sm:text-3xl">
+        <h2
+          id={`store-category-${category.id}`}
+          className="text-2xl font-bold tracking-tight sm:text-3xl"
+        >
           {name}
         </h2>
         <span className="rounded-full border border-border bg-glass px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -229,8 +276,12 @@ function StorePage() {
           <span className="grid h-16 w-16 place-items-center rounded-2xl border border-gold/30 bg-gold/10">
             <ShoppingBag className="h-8 w-8 text-gold" aria-hidden />
           </span>
-          <h2 className="text-2xl font-bold tracking-tight uppercase sm:text-3xl">{t("store.empty.title")}</h2>
-          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">{t("store.empty.body")}</p>
+          <h2 className="text-2xl font-bold tracking-tight uppercase sm:text-3xl">
+            {t("store.empty.title")}
+          </h2>
+          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+            {t("store.empty.body")}
+          </p>
         </div>
       ) : (
         <div className="space-y-10 sm:space-y-14">
