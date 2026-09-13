@@ -118,20 +118,37 @@ export function sanitizeMessage(input: unknown): string {
     .trim();
 }
 
-function isTrue(value: unknown): boolean {
-  return value === true || (typeof value === "string" && value.toLowerCase() === "true");
+/** Strict success: the provider's JSON must carry ok === true and no errors. */
+function isAcceptedPayload(record: Record<string, unknown>): boolean {
+  if (record["ok"] !== true) return false;
+  const errors = record["errors"];
+  if (Array.isArray(errors) && errors.length > 0) return false;
+  return true;
 }
 
-/** Detects the provider's "form not activated yet" response. */
-function looksLikeActivation(message: unknown): boolean {
-  if (typeof message !== "string") return false;
-  const text = message.toLowerCase();
-  return (
-    text.includes("activat") ||
-    text.includes("confirm") ||
-    text.includes("verify") ||
-    text.includes("check your inbox")
-  );
+/**
+ * Collapses the provider's error array into text used transiently for
+ * classification only. Never logged, returned or retained.
+ */
+function errorText(record: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const errors = record["errors"];
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      if (entry && typeof entry === "object") {
+        const e = entry as Record<string, unknown>;
+        for (const key of ["code", "message", "field"]) {
+          if (typeof e[key] === "string") parts.push(e[key] as string);
+        }
+      } else if (typeof entry === "string") {
+        parts.push(entry);
+      }
+    }
+  }
+  for (const key of ["error", "message"]) {
+    if (typeof record[key] === "string") parts.push(record[key] as string);
+  }
+  return parts.join(" ").slice(0, 2048);
 }
 
 /** Coarse class of the upstream content type. No header value is ever logged. */
