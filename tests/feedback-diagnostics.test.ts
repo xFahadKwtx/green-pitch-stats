@@ -75,15 +75,12 @@ describe("feedback failure diagnostics", () => {
   });
 
   test("classifies an HTTP 403 HTML challenge as blocked_or_challenge", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response("<html><title>Attention Required! | Cloudflare</title></html>", {
-            status: 403,
-            headers: { "content-type": "text/html; charset=utf-8" },
-          }),
-      ),
+    stubFetch(
+      async () =>
+        new Response("<html><title>Attention Required! | Cloudflare</title></html>", {
+          status: 403,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        }),
     );
     const result = await sendFeedbackEmail("hello");
     expect(result).toEqual({ ok: false, reason: "provider_rejected" });
