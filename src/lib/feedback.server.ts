@@ -284,15 +284,14 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
     return { ok: false, reason: "send_failed" };
   }
   const record = payload as Record<string, unknown>;
-  const activation = looksLikeActivation(record["message"]);
 
-  // The provider answers success:"false" with an activation notice until the
-  // mailbox owner confirms the form; the submission itself is stored (30 days).
-  if (!isTrue(record["success"]) && !activation) {
-    const detail = typeof record["message"] === "string" ? (record["message"] as string).slice(0, 2048) : "";
+  // Strict: only ok === true with no errors counts as accepted. Pending
+  // recipient verification, spam/captcha blocks and any error array are
+  // failures — never a false success.
+  if (!isAcceptedPayload(record)) {
     logFeedbackFailure({
       category: "provider-rejected",
-      code: classifyRejection(response.status, detail, cls),
+      code: classifyRejection(response.status, errorText(record), cls),
       status: response.status,
       contentClass: cls,
       elapsedMs: elapsed(),
@@ -301,7 +300,7 @@ export async function sendFeedbackEmail(message: string): Promise<FeedbackResult
   }
 
   // Accepted receipt. Not proof of inbox delivery.
-  return { ok: true, activationPending: activation };
+  return { ok: true, activationPending: false };
 }
 
 
