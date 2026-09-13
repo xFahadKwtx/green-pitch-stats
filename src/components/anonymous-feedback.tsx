@@ -13,7 +13,7 @@ const ERROR_KEYS: Record<FeedbackReason, TKey> = {
   rate_limited: "feedback.error.rate",
   spam: "feedback.error.failed",
   send_failed: "feedback.error.failed",
-  email_not_configured: "feedback.error.unconfigured",
+  provider_rejected: "feedback.error.failed",
 };
 
 /** Anonymous suggestion / complaint form. No identity fields, ever. */
@@ -70,12 +70,13 @@ export function AnonymousFeedback() {
           rows={5}
           maxLength={MAX_LENGTH}
           value={message}
+          disabled={sending}
           onChange={(e) => {
             setMessage(e.target.value);
             if (state === "sent") setState("idle");
           }}
           placeholder={t("feedback.placeholder")}
-          className="w-full resize-y rounded-2xl border border-border bg-background/40 p-4 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground focus:border-gold/60 sm:text-base"
+          className="w-full resize-y rounded-2xl border border-border bg-background/40 p-4 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground focus:border-gold/60 disabled:opacity-70 sm:text-base"
         />
 
         {/* Honeypot: hidden from humans and assistive tech, filled only by bots. */}
