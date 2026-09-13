@@ -112,3 +112,58 @@ export function logScheduledWarmFailure(feed: string, phase: WarmPhase, error?: 
     // A failed logging sink must never affect the warming response.
   }
 }
+
+/** Fixed, allowlisted technical reason codes for a feedback submission failure. */
+export const FEEDBACK_REASON_CODES = [
+  "origin_required",
+  "activation_required",
+  "captcha_required",
+  "rate_limited",
+  "blocked_or_challenge",
+  "invalid_request",
+  "invalid_json",
+  "timeout",
+  "network",
+  "provider_rejected_unknown",
+] as const;
+export type FeedbackReasonCode = (typeof FEEDBACK_REASON_CODES)[number];
+
+const FEEDBACK_CATEGORIES = ["upstream-http", "invalid-response", "timeout", "network", "provider-rejected"] as const;
+export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
+
+const FEEDBACK_CONTENT_CLASSES = ["json", "html", "other", "none"] as const;
+export type FeedbackContentClass = (typeof FEEDBACK_CONTENT_CLASSES)[number];
+
+/**
+ * One bounded line per failed anonymous-feedback submission. Only fixed
+ * allowlisted values are emitted: never the visitor's message, the recipient
+ * address, upstream body text, error messages, URLs, headers, IP or user agent.
+ * Unknown inputs collapse to fixed unknown codes. Never throws.
+ */
+export function logFeedbackFailure(input: {
+  category: string;
+  code: string;
+  status?: number | null;
+  contentClass?: string;
+  elapsedMs?: number;
+}): void {
+  try {
+    const status = typeof input.status === "number" && Number.isInteger(input.status) && input.status >= 100 && input.status <= 599 ? input.status : null;
+    const elapsed = typeof input.elapsedMs === "number" && Number.isFinite(input.elapsedMs) && input.elapsedMs >= 0 ? Math.round(input.elapsedMs) : null;
+    const line = JSON.stringify({
+      event: "feedback_submit_failure",
+      category: (FEEDBACK_CATEGORIES as readonly string[]).includes(input.category) ? input.category : "provider-rejected",
+      code: (FEEDBACK_REASON_CODES as readonly string[]).includes(input.code) ? input.code : "provider_rejected_unknown",
+      status,
+      contentClass: (FEEDBACK_CONTENT_CLASSES as readonly string[]).includes(input.contentClass ?? "") ? input.contentClass : "other",
+      elapsedMs: elapsed,
+      at: new Date().toISOString(),
+      ref: crypto.randomUUID(),
+    });
+    const record = Object.freeze(JSON.parse(line) as Record<string, unknown>);
+    trustedRecords.set(record, line);
+    console.error(record);
+  } catch {
+    // A failed logging sink must never affect the visitor's response.
+  }
+}
