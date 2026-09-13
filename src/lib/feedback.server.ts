@@ -10,6 +10,11 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import {
+  logFeedbackFailure,
+  type FeedbackContentClass,
+  type FeedbackReasonCode,
+} from "./server-diagnostics.server";
 
 export const FEEDBACK_RECIPIENT = "almustatilalakhdar@gmail.com";
 export const FEEDBACK_MIN_LENGTH = 1;
