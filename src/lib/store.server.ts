@@ -8,6 +8,7 @@ import type { StoreCategorySection, StoreItem } from "@/data/types";
 
 import { AIRTABLE_TABLES, listAirtableRecords, str } from "./airtable.server";
 import { parseStorePoints } from "./store-pricing";
+import { FIXED_SECTIONS, fixedSectionKey } from "./store-sections";
 
 const linkIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -48,11 +49,7 @@ const storeSection = (value: unknown): string => {
   return str(value).toLowerCase();
 };
 
-/** Fixed sections that come before the point-category sections. */
-const FIXED_SECTIONS = [
-  { key: "cards", id: "store-section-cards", nameEn: "Cards", nameAr: "البطاقات" },
-  { key: "cashback", id: "store-section-cashback", nameEn: "Cashback", nameAr: "استرداد نقدي" },
-] as const;
+// Fixed sections (Coupons / Cashback) live in ./store-sections.
 
 /** Website-visible store products grouped by their linked Airtable category. */
 export async function fetchStoreFromAirtable(): Promise<StoreCategorySection[]> {
