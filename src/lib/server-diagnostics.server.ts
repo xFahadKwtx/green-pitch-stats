@@ -117,6 +117,7 @@ export function logScheduledWarmFailure(feed: string, phase: WarmPhase, error?: 
 export const FEEDBACK_REASON_CODES = [
   "origin_required",
   "activation_required",
+  "verification_required",
   "captcha_required",
   "rate_limited",
   "blocked_or_challenge",
