@@ -26,6 +26,8 @@ export async function fetchUpcomingGamesFromAirtable(): Promise<Match[]> {
         time: str(record.fields["time"]),
         location: str(record.fields["Location EN"]),
         locationAr: str(record.fields["Location AR"]),
+        locationUrl: str(record.fields["Location URL"]),
+        matchFormat: str(record.fields["Match Format"]),
       });
     })
     .filter((match): match is Match => match !== null)

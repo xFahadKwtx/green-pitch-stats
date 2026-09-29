@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock, MapPin, MessageCircle } from "lucide-react";
+import { Clock, MapPin, MessageCircle, Navigation, Users } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
@@ -10,6 +10,7 @@ import type { Match } from "@/data/types";
 import {
   dayName,
   longDate,
+  matchFormatLabel,
   matchLocation,
   prettyTime,
   registrationLink,
@@ -91,6 +92,39 @@ function GameCard({ match, onExpired }: { match: Match; onExpired: () => void })
             </dd>
           </div>
         </div>
+        {match.matchFormat ? (
+          <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-glass px-4 py-3">
+            <Users className="h-5 w-5 shrink-0 text-gold" aria-hidden />
+            <div className="min-w-0">
+              <dt className="text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+                {t("games.matchFormat")}
+              </dt>
+              <dd className="stat-number truncate text-lg">
+                {matchFormatLabel(match.matchFormat, lang)}
+              </dd>
+            </div>
+          </div>
+        ) : null}
+        {match.locationUrl ? (
+          <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-glass px-4 py-3">
+            <Navigation className="h-5 w-5 shrink-0 text-gold" aria-hidden />
+            <div className="min-w-0">
+              <dt className="text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+                {t("games.pitchLocation")}
+              </dt>
+              <dd className="truncate text-lg">
+                <a
+                  href={match.locationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="stat-number font-semibold text-gold underline-offset-4 hover:underline"
+                >
+                  {t("games.openMap")}
+                </a>
+              </dd>
+            </div>
+          </div>
+        ) : null}
       </dl>
 
       <a
