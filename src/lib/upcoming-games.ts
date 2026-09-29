@@ -68,10 +68,12 @@ export function normalizeBooking(match: Match): Match | null {
   const minutes = parseBookingTime(match.time);
   if (date === null || minutes === null) return null;
   // Re-validated on every normalize, so stale cached payloads stay safe.
-  const locationUrl = normalizeLocationUrl(match.locationUrl);
-  const matchFormat = normalizeMatchFormat(match.matchFormat);
+  // Raw values are destructured out first so invalid ones can never leak through.
+  const { locationUrl: rawUrl, matchFormat: rawFormat, ...rest } = match;
+  const locationUrl = normalizeLocationUrl(rawUrl);
+  const matchFormat = normalizeMatchFormat(rawFormat);
   return {
-    ...match,
+    ...rest,
     date: match.date.trim(),
     time: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
     ...(locationUrl !== undefined ? { locationUrl } : {}),
