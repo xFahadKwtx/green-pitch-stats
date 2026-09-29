@@ -99,11 +99,12 @@ describe("normalizeBooking with the new details", () => {
   });
 
   test("eligibility filtering still applies with the new fields present", () => {
-    const now = Date.UTC(2026, 9, 1, 12, 0, 0); // Thursday, week of Oct 4 (Sunday)
+    const now = Date.UTC(2026, 9, 1, 12, 0, 0); // Thursday; booking Sat Oct 3 is in-week
     const eligible = eligibleBookings(
       [
         {
           ...baseMatch,
+          date: "2026-10-03",
           locationUrl: "https://maps.google.com/?q=1,2",
           matchFormat: "8v8",
         },
