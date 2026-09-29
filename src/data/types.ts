@@ -70,6 +70,10 @@ export interface Match {
   location: string;
   locationAr: string;
   spotsLeft?: number;
+  /** Optional Airtable "Location URL" — absolute http(s) map link, else undefined. */
+  locationUrl?: string;
+  /** Optional Airtable "Match Format" — one of "6v6"–"9v9", else undefined. */
+  matchFormat?: string;
 }
 
 export interface Announcement {

@@ -38,6 +38,30 @@ export function parseBookingTime(value: unknown): number | null {
   return hour * 60 + minute;
 }
 
+/** Accept only absolute http(s) URLs; every other scheme or shape is rejected. */
+export function normalizeLocationUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  return url.toString();
+}
+
+const MATCH_FORMATS = new Set(["6v6", "7v7", "8v8", "9v9"]);
+
+/** Accept only the known Airtable "Match Format" choices; never invent a default. */
+export function normalizeMatchFormat(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return MATCH_FORMATS.has(trimmed) ? trimmed : undefined;
+}
+
 /** Normalize only internal data; existing card/message formatters render 12-hour time. */
 export function normalizeBooking(match: Match): Match | null {
   const date = parseBookingDate(match.date);
@@ -47,6 +71,9 @@ export function normalizeBooking(match: Match): Match | null {
     ...match,
     date: match.date.trim(),
     time: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+    // Re-validated on every normalize, so stale cached payloads stay safe.
+    locationUrl: normalizeLocationUrl(match.locationUrl),
+    matchFormat: normalizeMatchFormat(match.matchFormat),
   };
 }
 
