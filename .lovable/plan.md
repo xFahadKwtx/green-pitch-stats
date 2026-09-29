@@ -1,80 +1,38 @@
-# Contact form failure on the live site — diagnosis
+# Diagnosis: slow "Upcoming Games" on the live site (read-only, nothing changed)
 
-## What the visitor sees
+## Measured (2026-09-29 ~20:55 UTC)
+- Page first-byte times on the live site (after your test): `/` 200 in 0.77s, `/upcoming-games` 200 in 0.94s, `/players` 200 in 0.62s. The site itself is not hanging now.
+- Live server logs: **not available** — the log service timed out when I tried to connect. So there is no log proof of the cause.
+- Saved-data state (read-only SELECT on the live cache table, at 20:55:55 UTC):
 
-On https://almustatil.lovable.app/contact the message box shows
-"تعذّر إرسال الرسالة حالياً. الرجاء المحاولة لاحقاً." That wording is the single
-generic failure text used for three different internal outcomes, so the message
-itself does not tell us which one happened.
+| Feed (live) | refresh started | fresh until | failures |
+|---|---|---|---|
+| players | 20:48:00 | 21:03:00 | 0 |
+| store | 20:48:05 | 21:03:05 | 0 |
+| upcoming-games | **20:53:25** | 21:08:25 | 0 |
+| records | 20:04:30 | **20:19:30 (expired)** | 0 |
 
-## Confirmed by evidence
+- No failures, no retry lock, no stuck lease on the live feeds. Players and store were refreshed together at 20:48 (the scheduled warmer).
 
-1. The server side runs and does not crash. Live logs show the contact
-   submissions at 22:17 UTC (five attempts) each answered with HTTP 200, and no
-   error line anywhere in the last hour of live logs. So this is not a startup
-   crash, not a missing import, not a random-number/global-scope failure, and not
-   a request-encoding problem: our code executed and returned a normal
-   "could not send" answer.
-2. It is not the "empty message", "too long", or "too many messages" path — each
-   of those shows different wording on the page.
-3. So the failure happens at the step where our server hands the message to
-   FormSubmit: either FormSubmit answered with a refusal, or the call did not
-   complete (blocked, non-JSON answer, or timeout).
-4. The exact reason is deliberately discarded. The sending code catches every
-   upstream problem and returns a bare generic reason, and unlike the rest of the
-   site this path writes no sanitized diagnostic line. That is why the live logs
-   are silent, and why the cause cannot be narrowed further from logs alone.
+## Strongest inference (strong, but no logs confirm it)
+1. The scheduled warmer only keeps **players and store** fresh. Upcoming Games and Records are not warmed.
+2. The Upcoming Games data was refreshed at **20:53:25 — the same minute you clicked**. That means the saved copy had expired, and your click made the server fetch it again from Airtable *while you waited*, with the paced/limited Airtable requests (up to 5s per request, busy re-checks 1s/2s/4s). That explains "several seconds".
+3. The Upcoming Games page starts the data load without waiting for it, then waits for the data while drawing. The router keeps the old (home) screen visible, with no loading indicator, until the data comes back. That matches "URL changed but home content stayed".
+4. Not supported by what I could see: no deadlock, no repeated failures, no error loop (failure_count 0 everywhere, the card loaded correctly).
 
-## Inferred (not yet proven)
+Records is in the same state now (expired since 20:19) — the next visitor to Records will likely get the same delay.
 
-The most likely cause is that FormSubmit is refusing or blocking the call as it
-arrives from the live site's own servers. Important detail from history: the
-earlier successful submissions (the activation probe and the labelled Arabic test
-message) were sent from the build sandbox, not from the live site. The live site
-has never had a confirmed successful call to FormSubmit. Common refusals in this
-situation are a bot/abuse block returning an HTML page instead of JSON, or a
-refusal tied to the site-identity headers we attach with the request.
+## Missing evidence
+- Live server logs for 20:53 (log service unreachable) — they would give the exact server time for the Upcoming Games request.
+- A timed browser capture of the data request during a cold click.
 
-I will not test this by sending a real message, since the only authorization given
-was for activation. An intentionally empty or honeypot payload is rejected by our
-own validation before the call is made, so it cannot prove anything about
-FormSubmit either.
+## Minimal fix proposed (NOT applied — needs your approval)
+1. Add `upcoming-games` and `records` to the scheduled warmer's live list (same 780s threshold, same */12 schedule, no TTL change). This removes the waiting-for-Airtable on first click. One small list change in the cache code plus test/doc updates.
+2. Optional, frontend only: add a short loading state (`pendingComponent`) on the data pages so a slow load shows "loading" instead of the previous page.
 
-## Smallest safe fix (proposed)
+Cost to know: warming two more feeds adds about 2 Airtable reads every 12 minutes — well under limits.
 
-Make the cause visible, then fix the cause — in that order.
-
-Step 1 (this change): add one bounded, sanitized diagnostic line to the feedback
-path, reusing the site's existing safe reporting helper. It records only: the
-event name, a category (refused / blocked / invalid answer / timeout), the HTTP
-status number, whether the answer was valid JSON, a timestamp and a random
-reference. It never records the message text, the recipient address, headers,
-visitor address or any provider text. Visitor-facing wording, design, Arabic
-text, the single message box, validation, spam protection and rate limits stay
-exactly as they are.
-
-Step 2 (after we can see the cause): apply the minimal correction the diagnostic
-points to — most likely adjusting how the request identifies our site, or
-switching the request body format, or moving delivery to a provider that accepts
-server-to-server calls. That step will come back to you as its own small plan.
-
-## What needs your authorization
-
-- Publishing step 1, so the diagnostic can record what happens live.
-- Exactly one real submission on the live contact page after publishing (any
-  short text) so a real attempt is captured. Without one real attempt the cause
-  stays invisible. Nothing is emailed beyond that single message, and I will not
-  read message contents.
-
-## Technical notes
-
-- Files that would change in step 1: `src/lib/feedback.server.ts` (add
-  sanitized failure logging around the upstream call and the response checks),
-  `src/lib/server-diagnostics.server.ts` (add a feedback event to the existing
-  allowlisted logger), plus focused tests in `tests/feedback.test.ts`
-  asserting the log line carries only allowlisted fields and no message text.
-- Evidence reviewed read-only: `src/lib/feedback.server.ts`,
-  `src/lib/feedback.functions.ts`, `src/components/anonymous-feedback.tsx`,
-  `src/lib/i18n.tsx`, `src/lib/server-diagnostics.server.ts`, and the live
-  worker request logs for the last hour. No files, settings, secrets or
-  dependencies were touched, and no message was submitted.
+## Technical details
+- Warmer list: `WARM_MIN_FRESH_MS` / production feeds in `src/lib/public-feed-cache.server.ts`, route `src/routes/api/public/warm-feeds.ts`.
+- Loaders use `void context.queryClient.ensureQueryData(...)` with `useSuspenseQuery` in the component and no `pendingComponent` (`src/routes/upcoming-games.tsx`, `records.tsx`, etc.).
+- Validation after the fix: read the cache table after a warmer run and confirm `refresh_started_at` for upcoming-games/records moves on the schedule, not on visitor clicks.
