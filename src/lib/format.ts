@@ -47,6 +47,10 @@ export function prettyTime(time: string, _lang: Lang) {
 export const matchLocation = (match: Match, lang: Lang) =>
   lang === "ar" ? match.locationAr : match.location;
 
+/** "7v7" in English, "7 ضد 7" in Arabic. Input is already a validated format. */
+export const matchFormatLabel = (format: string, lang: Lang) =>
+  lang === "ar" ? format.replace("v", " ضد ") : format;
+
 /** WhatsApp registration deep link, carrying this booking's own details. */
 export function registrationLink(match: Match, phone: string, lang: Lang) {
   const lines =
