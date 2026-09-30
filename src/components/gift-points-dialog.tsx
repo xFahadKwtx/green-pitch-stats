@@ -9,7 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { contactInfo } from "@/data/site";
-import { giftablePlayers, giftLink, isRealPlayerId, parseGiftPoints } from "@/lib/gift-points";
+import {
+  GIFT_MAX_POINTS,
+  GIFT_MIN_POINTS,
+  giftablePlayers, giftLink, isRealPlayerId, parseGiftPoints } from "@/lib/gift-points";
 import { useI18n } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 
@@ -145,9 +148,11 @@ export default function GiftForm() {
         </label>
         <input
           id={`${ids}-points`}
-          type="text"
+          type="number"
           inputMode="numeric"
-          pattern="[0-9]*"
+          min={GIFT_MIN_POINTS}
+          max={GIFT_MAX_POINTS}
+          step={1}
           value={points}
           onChange={(e) => setPoints(e.target.value)}
           onBlur={() => setTouched(true)}
@@ -158,10 +163,15 @@ export default function GiftForm() {
         />
         <p
           id={`${ids}-points-hint`}
-          className={`text-xs ${touched && pointsValue === null ? "text-destructive" : "text-muted-foreground"}`}
+          className="text-xs font-semibold text-gold"
         >
-          {t("gift.pointsHint")}
+          {t("gift.pointsRange")}
         </p>
+        {touched && pointsValue === null ? (
+          <p className="text-xs text-destructive" role="alert">
+            {t("gift.pointsError")}
+          </p>
+        ) : null}
       </div>
 
       {href ? (

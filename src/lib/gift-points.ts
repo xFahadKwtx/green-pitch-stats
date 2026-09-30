@@ -19,12 +19,15 @@ export function giftablePlayers(players: Player[]): Player[] {
   return players.filter((p) => isRealPlayerId(p.id));
 }
 
-/** Parses a whole positive safe integer from user input, else null. */
+export const GIFT_MIN_POINTS = 15;
+export const GIFT_MAX_POINTS = 30;
+
+/** Parses a whole integer within GIFT_MIN_POINTS..GIFT_MAX_POINTS (inclusive), else null. */
 export function parseGiftPoints(raw: string): number | null {
   const text = raw.trim();
   if (!/^[0-9]+$/.test(text)) return null;
   const value = Number(text);
-  if (!Number.isSafeInteger(value) || value <= 0) return null;
+  if (!Number.isSafeInteger(value) || value < GIFT_MIN_POINTS || value > GIFT_MAX_POINTS) return null;
   return value;
 }
 

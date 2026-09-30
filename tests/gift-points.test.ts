@@ -24,10 +24,11 @@ describe("gift points", () => {
   });
 
   test("points validation", () => {
-    for (const bad of ["", " ", "0", "-5", "1.5", "1e3", "abc", "Infinity", "NaN", "9007199254740993"])
+    for (const bad of ["", " ", "0", "-5", "14", "31", "15.5", "20.0", "1e3", "abc", "Infinity", "NaN", "9007199254740993"])
       expect(parseGiftPoints(bad)).toBeNull();
-    expect(parseGiftPoints("25")).toBe(25);
-    expect(parseGiftPoints(" 7 ")).toBe(7);
+    expect(parseGiftPoints("15")).toBe(15);
+    expect(parseGiftPoints("30")).toBe(30);
+    expect(parseGiftPoints(" 20 ")).toBe(20);
   });
 
   test("exact Arabic and English messages", () => {
@@ -42,9 +43,11 @@ describe("gift points", () => {
   test("link only for valid input, encoded", () => {
     expect(giftLink("96551287700", "en", null, "5")).toBeNull();
     expect(giftLink("96551287700", "en", player, "0")).toBeNull();
-    expect(giftLink("96551287700", "en", { ...player, id: "recAbCdEf12345678" }, "5")).toBeNull();
-    const href = giftLink("96551287700", "ar", player, "5")!;
+    expect(giftLink("96551287700", "en", player, "14")).toBeNull();
+    expect(giftLink("96551287700", "en", player, "31")).toBeNull();
+    expect(giftLink("96551287700", "en", { ...player, id: "recAbCdEf12345678" }, "20")).toBeNull();
+    const href = giftLink("96551287700", "ar", player, "15")!;
     expect(href.startsWith("https://wa.me/96551287700?text=")).toBe(true);
-    expect(decodeURIComponent(href.split("text=")[1])).toBe(giftMessage("ar", player, 5));
+    expect(decodeURIComponent(href.split("text=")[1])).toBe(giftMessage("ar", player, 15));
   });
 });
