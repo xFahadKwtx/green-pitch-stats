@@ -3,7 +3,6 @@ import { ArrowUpRight, Loader2, Search } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
 import {
-  Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -14,37 +13,8 @@ import { giftablePlayers, giftLink, isRealPlayerId, parseGiftPoints } from "@/li
 import { useI18n } from "@/lib/i18n";
 import { playersQueryOptions } from "@/lib/players-query";
 
-/** Trigger + dialog. Players load only once the dialog is opened. */
-export function GiftPointsAction() {
-  const { t, lang } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [session, setSession] = useState(0);
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setSession((s) => s + 1);
-          setOpen(true);
-        }}
-        className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-gold px-3.5 text-[13px] font-bold text-primary-foreground shadow-gold ${
-          lang === "ar" ? "flex-row-reverse" : "flex-row"
-        }`}
-        style={{ direction: "ltr" }}
-      >
-        {/* Physical order is fixed via direction:ltr: AR → emoji left, EN → emoji right. */}
-        <span dir={lang === "ar" ? "rtl" : "ltr"}>{t("store.gift")}</span>
-        <span aria-hidden>🎁</span>
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        {open ? <GiftForm key={session} /> : null}
-      </Dialog>
-    </>
-  );
-}
-
-function GiftForm() {
+/** Dialog body — lazy-loaded so the players feed code loads only on open. */
+export default function GiftForm() {
   const { t, lang } = useI18n();
   const ids = useId();
   const query = useQuery({ ...playersQueryOptions, enabled: true });
