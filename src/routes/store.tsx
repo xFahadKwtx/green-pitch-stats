@@ -261,7 +261,7 @@ function StorePage() {
   return (
     <PageShell>
       <PageHeader eyebrow={t("brand")} title={t("store.title")} subtitle={t("store.sub")} />
-      <div className="mb-6 inline-flex w-fit max-w-full items-center rounded-full border border-border bg-glass p-1.5">
+      <div className="mb-6 inline-flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-full border border-border bg-glass p-1.5">
         <a
           href={`https://wa.me/${contactInfo.whatsappNumber}?text=${encodeURIComponent("السلام عليكم، أرغب باستخدام ميزة Freeze 🧊")}`}
           target="_blank"
@@ -270,6 +270,7 @@ function StorePage() {
         >
           {t("store.freeze")}
         </a>
+        <GiftPointsAction />
       </div>
       {categories.length === 0 ? (
         <div className="glass-card topo-lines flex flex-col items-center gap-4 px-6 py-14 text-center">
