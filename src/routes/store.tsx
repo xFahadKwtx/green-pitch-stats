@@ -4,6 +4,7 @@ import { ArrowUpRight, ShoppingBag, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
+import { GiftPointsAction } from "@/components/gift-points-dialog";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import type { StoreCategorySection, StoreItem } from "@/data/types";
 import { contactInfo } from "@/data/site";
