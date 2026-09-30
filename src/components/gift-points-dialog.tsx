@@ -55,7 +55,7 @@ export default function GiftForm() {
       className="glass-card max-h-[90vh] w-[calc(100%-1.5rem)] overflow-y-auto rounded-2xl border-gold/30 p-5 sm:p-6"
     >
       <DialogHeader className="text-start sm:text-start">
-        <DialogTitle className="pe-8 text-xl font-bold">{t("gift.title")}</DialogTitle>
+        <DialogTitle className="pr-8 text-xl font-bold">{t("gift.title")}</DialogTitle>
         <DialogDescription className="text-[13px] leading-relaxed">
           {t("gift.explain")}
         </DialogDescription>
