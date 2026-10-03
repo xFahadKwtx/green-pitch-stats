@@ -71,12 +71,12 @@ test("homepage uses the exact static marketing string and preserves surrounding 
   expect(home).toContain("{s.value}");
   expect(home).toContain('dir={s.value === "99+" ? "ltr" : undefined}');
 });
-test("October remains unsupported", () => {
-  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09"]);
+test("October 2026 is supported once, after September", () => {
+  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]);
 });
 test("README describes current feeds, rewards and manual Freeze requests", () => {
   const readme = source("README.md");
-  for (const text of ["Airtable is the source of truth", "15-minute hard expiry", "manual administrator review", "free match or 8 points", "or 70 points", "1.5 points", "0.25 points", "October is not supported yet"]) expect(readme).toContain(text);
+  for (const text of ["Airtable is the source of truth", "15-minute hard expiry", "manual administrator review", "free match or 8 points", "or 70 points", "1.5 points", "0.25 points", "October 2026 is supported"]) expect(readme).toContain(text);
   for (const text of ["Do NOT connect a database yet", "For now, leave the store empty", "immediately following match", "use structured mock/sample data"]) expect(readme).not.toContain(text);
   expect(readme).toContain("bun install --frozen-lockfile");
   expect(readme).toContain("bun test --isolate --timeout 15000");

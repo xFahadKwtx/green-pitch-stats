@@ -601,6 +601,7 @@ function seedFullBase() {
   world.seedTable(AIRTABLE_TABLES.statsJuly, 82);
   world.seedTable(AIRTABLE_TABLES.statsAugust, 122);
   world.seedTable(AIRTABLE_TABLES.statsSeptember, 122);
+  world.seedTable(AIRTABLE_TABLES.statsOctober, 122);
   world.seedTable(AIRTABLE_TABLES.records, 3);
   world.seedTable(AIRTABLE_TABLES.store, 25);
   world.seedTable(AIRTABLE_TABLES.storeCategories, 5);
@@ -934,7 +935,7 @@ describe("pagination and permits", () => {
     seedFullBase();
     const { fetchPlayersFromAirtable } = await import("../src/lib/airtable-players.server");
     await getCachedPublicFeed("players", () => fetchPlayersFromAirtable());
-    expect(world.airtableRequests.length).toBe(8);
+    expect(world.airtableRequests.length).toBe(10);
 
     world.airtableRequests = [];
     await getCachedPublicFeed("records", () => fetchRecordsFromAirtable());

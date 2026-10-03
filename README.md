@@ -136,6 +136,7 @@ Add a statistics filter:
 * July 2026
 * August 2026
 * September 2026
+* October 2026
 * All
 
 Every month must have its own statistics.
@@ -185,6 +186,7 @@ At the top add a filter:
 * July 2026
 * August 2026
 * September 2026
+* October 2026
 * All
 
 Each month has independent data.
@@ -429,7 +431,7 @@ Airtable is the source of truth for the public Players, Records, Store and Upcom
 
 Feed loaders are separate from UI components. Announcements and reward descriptions remain source-managed content. The homepage match count is the intentional marketing display `99+`, not a live match total.
 
-Supported statistics periods are June, July, August and September 2026. October is not supported yet and requires a separate approved change. The intentional June/July estimation policy remains unchanged.
+Supported statistics periods are June, July, August, September and October 2026. October 2026 is supported (table tblHjLFOBQngSaERO, linked through "Players DATABASE 2"); later months require a separate approved change. The intentional June/July estimation policy remains unchanged.
 
 Do not create user accounts or login functionality.
 
@@ -465,7 +467,7 @@ Requirements:
 
 * Keep player names, statistics and ranking numbers clearly readable
 
-* Filters such as June 2026 / July 2026 / August 2026 / September 2026 / All should be easy to use on mobile
+* Filters such as June 2026 / July 2026 / August 2026 / September 2026 / October 2026 / All should be easy to use on mobile
 
 * Month filters may become horizontally scrollable tabs on smaller screens
 
