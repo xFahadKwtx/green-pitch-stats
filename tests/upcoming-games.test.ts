@@ -59,7 +59,16 @@ mock.module("react", () => ({
 const { fetchUpcomingGamesFromAirtable } = await import("../src/lib/upcoming-games.server");
 const { getUpcomingGames } = await import("../src/lib/upcoming-games.functions");
 const { Route } = await import("../src/routes/upcoming-games");
-const Page = Route.options.component as () => any;
+const Shell = Route.options.component as () => any;
+/** The list now sits inside the page shell's Suspense/retry boundary; render that inner list. */
+function findList(tree: any): any {
+  if (!tree || typeof tree !== "object") return undefined;
+  if (Array.isArray(tree)) { for (const n of tree) { const f = findList(n); if (f) return f; } return undefined; }
+  if (typeof tree.type === "function" && tree.type.name === "GamesList") return tree;
+  const kids = tree.props?.children;
+  return findList(typeof kids === "function" ? kids({ reset: () => {} }) : kids);
+}
+const Page = () => { const list = findList(Shell()); return list.type(list.props); };
 
 beforeEach(() => {
   now = Date.parse("2026-09-13T20:00:00+03:00");
