@@ -194,7 +194,7 @@ describe("Airtable mapping", () => {
       row("2026-09-20", "22:00", true, "next-week"), row("2026-09-13", "22:00", true, "current")];
     const result = await fetchUpcomingGamesFromAirtable();
     expect(result.map(g => g.id)).toEqual(["past", "current", "next-week", "future"]);
-    expect(eligibleBookings(result, now).map(g => g.id)).toEqual(["current"]);
+    expect(eligibleBookings(result, now).map(g => g.id)).toEqual(["current", "next-week", "future"]);
   });
   test("same-date mixed formats and following-day midnight sort chronologically", async () => {
     rows = [row("2026-09-14", "12:00 AM", true, "next-midnight"), row("2026-09-13", "11:30 PM", true, "late"),
@@ -213,12 +213,12 @@ describe("Airtable mapping", () => {
   });
 });
 
-describe("Kuwait current week and exact start cutoff", () => {
+describe("Kuwait future eligibility and exact start cutoff", () => {
   for (const [date, time, expected] of [
     ["2026-09-12", "23:59", false], ["2026-09-13", "09:00", false],
     ["2026-09-13", "22:00", true], ["2026-09-14", "09:00", true],
     ["2026-09-16", "22:00", true], ["2026-09-19", "23:59", true],
-    ["2026-09-20", "00:00", false], ["2030-01-01", "22:00", false],
+    ["2026-09-20", "00:00", true], ["2030-01-01", "22:00", true],
   ] as const) {
     test(`${date} ${time}: eligible=${expected}`, () => {
       expect(isBookingEligible(booking(date, time), now)).toBe(expected);
@@ -322,7 +322,7 @@ describe("actual server handler after unchanged H2", () => {
   test("Sunday week rollover uses the same cached payload without an Airtable refresh", async () => {
     const payload = [booking("2026-09-19", "23:59", "sat"), booking("2026-09-20", "00:01", "sun")];
     await coordinator("fresh", payload, async calls => {
-      now = Date.parse("2026-09-19T23:58:00+03:00"); expect((await getUpcomingGames()).map(g => g.id)).toEqual(["sat"]);
+      now = Date.parse("2026-09-19T23:58:00+03:00"); expect((await getUpcomingGames()).map(g => g.id)).toEqual(["sat", "sun"]);
       now = Date.parse("2026-09-20T00:00:00+03:00"); expect((await getUpcomingGames()).map(g => g.id)).toEqual(["sun"]);
       expect(reads).toEqual([]); expect(calls.length).toBe(2);
     });
@@ -330,7 +330,7 @@ describe("actual server handler after unchanged H2", () => {
   test("refresh publishes all validated dates but returns only currently eligible bookings", async () => {
     rows = [row("2026-09-13", "22:00", true, "current"), row("2026-09-20", "22:00", true, "next"), row("2026-02-30")];
     await coordinator("claimed", [], async calls => {
-      expect((await getUpcomingGames()).map(g => g.id)).toEqual(["current"]);
+      expect((await getUpcomingGames()).map(g => g.id)).toEqual(["current", "next"]);
       const published = calls.find(c => c.operation === "h2_finish_refresh")!;
       expect(published.body.p_payload.map((g: Match) => g.id)).toEqual(["current", "next"]);
       expect(reads.length).toBe(1);
@@ -431,15 +431,15 @@ describe("actual open-page effect and registration callbacks", () => {
       browser.focus(); browser.visibility("visible"); expect(updates).toBe(previous);
     } finally { browser.restore(); }
   });
-  test("week boundary updates open-page eligibility without refresh or polling", () => {
-    now = Date.parse("2026-09-19T23:59:59.999+03:00");
+  test("kickoff updates open-page eligibility without refresh or polling", () => {
+    now = Date.parse("2026-09-20T00:00:59.999+03:00");
     queryData = [booking("2026-09-20", "00:01", "next")];
     const browser = fakeBrowser();
     try {
-      expect(links(html())).toEqual([]);
+      expect(links(html()).length).toBe(1);
       expect([...browser.timers.values()][0]!.at).toBe(now + 1);
       const previous = updates; browser.advance(now + 1);
-      expect(updates).toBe(previous + 1); expect(links(html()).length).toBe(1);
+      expect(updates).toBe(previous + 1); expect(links(html())).toEqual([]);
       expect(networkCalls).toBe(0); expect(reads).toEqual([]);
     } finally { browser.restore(); }
   });
@@ -464,8 +464,8 @@ describe("actual open-page effect and registration callbacks", () => {
     expect(links(html())).toEqual([]); expect(html()).not.toContain("<article");
     expect(html()).not.toContain("NaN"); expect(html()).not.toContain("Invalid Date");
   });
-  test("next transition ignores malformed/past/next-week entries and defaults to Sunday", () => {
-    expect(nextBookingTransition([booking("bad"), booking("2026-09-13", "19:00"), booking("2026-09-20")], now)).toBe(kuwaitWeek(now).end);
+  test("next transition ignores malformed/past entries and schedules earliest future start", () => {
+    expect(nextBookingTransition([booking("bad"), booking("2026-09-13", "19:00"), booking("2026-09-20")], now)).toBe(Date.parse("2026-09-13T21:00:00+03:00") + 0 * 0 + (now - now) + Math.min(Date.parse("2026-09-20T22:00:00+03:00"), now + 86_400_000) - Date.parse("2026-09-13T21:00:00+03:00"));
     expect(nextBookingTransition([booking("2026-09-13", "21:00"), booking()], now)).toBe(Date.parse("2026-09-13T21:00:00+03:00"));
   });
 });
