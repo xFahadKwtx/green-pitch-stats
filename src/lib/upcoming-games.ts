@@ -103,8 +103,8 @@ export function kuwaitWeek(now: number): { start: number; end: number } {
 
 export function isBookingEligible(match: Match, now: number): boolean {
   const start = bookingStart(match);
-  const week = kuwaitWeek(now);
-  return start !== null && start > now && start >= week.start && start < week.end;
+  // Any valid future start is eligible, across all future weeks.
+  return start !== null && start > now;
 }
 
 /** Recheck cached data without mutating it, including older unnormalized payloads. */
@@ -115,9 +115,12 @@ export function eligibleBookings(matches: Match[], now: number): Match[] {
     .sort(compareBookings);
 }
 
-/** One local wakeup at a booking start or week boundary, never a polling interval. */
+/** Longest single wait; far-future/empty lists recheck at most daily (no setTimeout overflow, no hot loop). */
+export const MAX_TRANSITION_DELAY_MS = DAY_MS;
+
+/** One local wakeup at the earliest future booking start, never a polling interval. */
 export function nextBookingTransition(matches: Match[], now: number): number {
-  let next = kuwaitWeek(now).end;
+  let next = now + MAX_TRANSITION_DELAY_MS;
   for (const match of matches) {
     if (isBookingEligible(match, now)) next = Math.min(next, bookingStart(match)!);
   }

@@ -28,12 +28,12 @@ export const Route = createFileRoute("/upcoming-games")({
       {
         name: "description",
         content:
-          "This week's football bookings with day, date, time and location. Register instantly on WhatsApp.",
+          "Upcoming football bookings with day, date, time and location. Register instantly on WhatsApp.",
       },
       { property: "og:title", content: "Upcoming Games — Al-Mustatil Al-Akhdar" },
       {
         property: "og:description",
-        content: "See this week's bookings and register on WhatsApp in one tap.",
+        content: "See upcoming bookings and register on WhatsApp in one tap.",
       },
       { property: "og:url", content: absoluteUrl("/upcoming-games") },
     ],
