@@ -186,6 +186,7 @@ At the top add a filter:
 * July 2026
 * August 2026
 * September 2026
+* October 2026
 * All
 
 Each month has independent data.
