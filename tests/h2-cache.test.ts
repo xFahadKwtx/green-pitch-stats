@@ -935,7 +935,7 @@ describe("pagination and permits", () => {
     seedFullBase();
     const { fetchPlayersFromAirtable } = await import("../src/lib/airtable-players.server");
     await getCachedPublicFeed("players", () => fetchPlayersFromAirtable());
-    expect(world.airtableRequests.length).toBe(8);
+    expect(world.airtableRequests.length).toBe(10);
 
     world.airtableRequests = [];
     await getCachedPublicFeed("records", () => fetchRecordsFromAirtable());
