@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createElement, Suspense } from "react";
-import { QueryClient, QueryClientProvider, QueryErrorResetBoundary, useSuspenseQuery, dehydrate, hydrate } from "@tanstack/react-query";
+
+import type { QueryClient } from "@tanstack/react-query";
 import { RetryBoundary } from "../src/components/retry-boundary";
 
 // Mirrors src/router.tsx filtering logic via the real router factory.
@@ -53,8 +53,6 @@ describe("upcoming-games SSR transfer", () => {
 
 describe("retry boundary", () => {
   test("retry resets and refetches", async () => {
-    const { renderToReadableStream } = await import("react-dom/server");
-    void renderToReadableStream; void dehydrate; void hydrate; void Suspense; void useSuspenseQuery; void QueryErrorResetBoundary; void QueryClientProvider; void createElement;
     let resets = 0;
     const b = new RetryBoundary({ children: null, onReset: () => resets++, fallback: (r) => r as never });
     let next: unknown;
