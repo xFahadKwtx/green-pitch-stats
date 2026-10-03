@@ -42,7 +42,7 @@ mock.module("../src/lib/airtable.server", () => ({
 }));
 // Execute the real handler without requiring a network transport/server request context.
 mock.module("@tanstack/react-start", () => ({ createServerFn: () => ({ handler: (run: unknown) => run }) }));
-mock.module("@tanstack/react-query", () => ({ useSuspenseQuery: () => ({ data: queryData }) }));
+mock.module("@tanstack/react-query", () => ({ useSuspenseQuery: () => ({ data: queryData }), QueryErrorResetBoundary: ({ children }: { children: (v: { reset: () => void }) => ReactNode }) => children({ reset: () => {} }) }));
 mock.module("../src/lib/upcoming-games-query", () => ({ upcomingGamesQueryOptions: {} }));
 mock.module("../src/lib/i18n", () => ({ useI18n: () => ({ lang, t: (key: string) => key }) }));
 mock.module("../src/components/ui-kit", () => ({
