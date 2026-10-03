@@ -465,7 +465,7 @@ describe("actual open-page effect and registration callbacks", () => {
     expect(html()).not.toContain("NaN"); expect(html()).not.toContain("Invalid Date");
   });
   test("next transition ignores malformed/past entries and schedules earliest future start", () => {
-    expect(nextBookingTransition([booking("bad"), booking("2026-09-13", "19:00"), booking("2026-09-20")], now)).toBe(Date.parse("2026-09-13T21:00:00+03:00") + 0 * 0 + (now - now) + Math.min(Date.parse("2026-09-20T22:00:00+03:00"), now + 86_400_000) - Date.parse("2026-09-13T21:00:00+03:00"));
+    expect(nextBookingTransition([booking("bad"), booking("2026-09-13", "19:00"), booking("2026-09-20")], now)).toBe(now + 86_400_000);
     expect(nextBookingTransition([booking("2026-09-13", "21:00"), booking()], now)).toBe(Date.parse("2026-09-13T21:00:00+03:00"));
   });
 });
