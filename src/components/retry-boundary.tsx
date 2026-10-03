@@ -5,7 +5,7 @@ export class RetryBoundary extends Component<
   { children: ReactNode; onReset: () => void; fallback: (retry: () => void) => ReactNode },
   { failed: boolean }
 > {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
@@ -13,7 +13,7 @@ export class RetryBoundary extends Component<
     this.props.onReset();
     this.setState({ failed: false });
   };
-  render() {
+  override render() {
     return this.state.failed ? this.props.fallback(this.retry) : this.props.children;
   }
 }
