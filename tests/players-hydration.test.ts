@@ -333,7 +333,7 @@ describe("pending, failed and unrelated SSR state", () => {
   });
   test("no Players query means no fetch and empty hydration state", async () => {
     const router = routerAt("/contact"); const state = await router.options.dehydrate!();
-    expect(state).toEqual({ playersQuery: { mutations: [], queries: [] } });
+    expect(state).toEqual({ playersQuery: { mutations: [], queries: [] }, upcomingGamesQuery: { mutations: [], queries: [] } });
     expect(feedCalls).toBe(0); expect(rpcCalls).toEqual([]);
     expect(clientOf(router).getQueryCache().getAll()).toEqual([]);
   });

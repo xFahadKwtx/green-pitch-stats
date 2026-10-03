@@ -1,7 +1,7 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { QueryErrorResetBoundary, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock, MapPin, MessageCircle, Navigation, Users } from "lucide-react";
-import { useEffect, useState, type MouseEvent } from "react";
+import { Clock, Loader2, MapPin, MessageCircle, Navigation, Users } from "lucide-react";
+import { Component, Suspense, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
 import { PageHeader, PageShell } from "@/components/ui-kit";
@@ -42,6 +42,11 @@ export const Route = createFileRoute("/upcoming-games")({
     void context.queryClient.ensureQueryData(upcomingGamesQueryOptions);
   },
   errorComponent: () => <FeedErrorNotice />,
+  pendingComponent: () => (
+    <PageShell>
+      <GamesLoading />
+    </PageShell>
+  ),
   component: UpcomingGames,
 });
 
@@ -142,7 +147,69 @@ function GameCard({ match, onExpired }: { match: Match; onExpired: () => void })
   );
 }
 
+function GamesLoading() {
+  const { t } = useI18n();
+  return (
+    <div role="status" aria-live="polite" className="glass-card flex items-center justify-center gap-3 p-8 text-muted-foreground">
+      <Loader2 className="h-5 w-5 animate-spin text-gold" aria-hidden />
+      <span>{t("games.loading")}</span>
+    </div>
+  );
+}
+
+function GamesError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div role="alert" className="glass-card flex flex-col items-center gap-4 p-8 text-center text-muted-foreground">
+      <p>{t("error.generic")}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex min-h-11 items-center justify-center rounded-full bg-gold px-6 text-sm font-bold text-primary-foreground"
+      >
+        {t("games.retry")}
+      </button>
+    </div>
+  );
+}
+
+/** Sanitized boundary: never renders the error object; retry resets Query + boundary. */
+export class GamesErrorBoundary extends Component<
+  { children: ReactNode; onReset: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  retry = () => {
+    this.props.onReset();
+    this.setState({ failed: false });
+  };
+  render() {
+    return this.state.failed ? <GamesError onRetry={this.retry} /> : this.props.children;
+  }
+}
+
 function UpcomingGames() {
+  const { t } = useI18n();
+  return (
+    <PageShell>
+      <PageHeader eyebrow={t("brand")} title={t("games.title")} subtitle={t("games.sub")} />
+      <QueryErrorResetBoundary>
+        {({ reset }) => (
+          <GamesErrorBoundary onReset={reset}>
+            <Suspense fallback={<GamesLoading />}>
+              <GamesList />
+            </Suspense>
+          </GamesErrorBoundary>
+        )}
+      </QueryErrorResetBoundary>
+    </PageShell>
+  );
+}
+
+function GamesList() {
   const { t } = useI18n();
   const { data: upcomingMatches } = useSuspenseQuery(upcomingGamesQueryOptions);
   const [, setNow] = useState(Date.now);
@@ -170,24 +237,13 @@ function UpcomingGames() {
 
   const visibleMatches = eligibleBookings(upcomingMatches, Date.now());
 
-  return (
-    <PageShell>
-      <PageHeader
-        eyebrow={t("brand")}
-        title={t("games.title")}
-        subtitle={t("games.sub")}
-      />
-      {visibleMatches.length === 0 ? (
-        <p className="glass-card p-8 text-center text-muted-foreground">
-          {t("games.empty")}
-        </p>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {visibleMatches.map((m) => (
-            <GameCard key={m.id} match={m} onExpired={() => setNow(Date.now())} />
-          ))}
-        </div>
-      )}
-    </PageShell>
+  return visibleMatches.length === 0 ? (
+    <p className="glass-card p-8 text-center text-muted-foreground">{t("games.empty")}</p>
+  ) : (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {visibleMatches.map((m) => (
+        <GameCard key={m.id} match={m} onExpired={() => setNow(Date.now())} />
+      ))}
+    </div>
   );
 }
