@@ -1,3 +1,4 @@
+/** Run separately from module-mocking suites (bun shares module mocks across files). */
 import { describe, expect, test } from "bun:test";
 
 import type { QueryClient } from "@tanstack/react-query";
