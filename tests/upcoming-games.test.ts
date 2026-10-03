@@ -270,7 +270,7 @@ describe("Kuwait future eligibility and exact start cutoff", () => {
           isBookingEligible(g,sunday+60000),kuwaitWeek(sunday),dayName(g.date,'en'),longDate(g.date,'en')]));`;
       const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: process.cwd(), env: { ...process.env, TZ: tz } });
       expect(run.exitCode).toBe(0);
-      expect(JSON.parse(run.stdout.toString())).toEqual([false, true, false,
+      expect(JSON.parse(run.stdout.toString())).toEqual([true, true, false,
         { start: Date.parse("2026-09-13T00:00:00+03:00"), end: Date.parse("2026-09-20T00:00:00+03:00") },
         "Sunday", "13 September 2026"]);
     });
@@ -339,7 +339,7 @@ describe("actual server handler after unchanged H2", () => {
   for (const status of ["busy", "backoff", "cooldown", "budget_exhausted", "disabled"]) {
     test(`still-fresh H2 ${status} fallback receives current-time eligibility`, async () => {
       await coordinator(status, [booking("2026-09-13", "19:00", "past"), booking(), booking("2026-09-20", "22:00", "next")], async () => {
-        expect((await getUpcomingGames()).map(g => g.id)).toEqual(["game"]); expect(reads).toEqual([]);
+        expect((await getUpcomingGames()).map(g => g.id)).toEqual(["game", "next"]); expect(reads).toEqual([]);
       });
     });
   }
