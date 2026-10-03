@@ -1,9 +1,10 @@
 import { QueryErrorResetBoundary, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, Loader2, MapPin, MessageCircle, Navigation, Users } from "lucide-react";
-import { Component, Suspense, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type MouseEvent } from "react";
 
 import { FeedErrorNotice } from "@/components/feed-error";
+import { RetryBoundary } from "@/components/retry-boundary";
 import { PageHeader, PageShell } from "@/components/ui-kit";
 import { contactInfo } from "@/data/site";
 import type { Match } from "@/data/types";
@@ -173,24 +174,6 @@ function GamesError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-/** Sanitized boundary: never renders the error object; retry resets Query + boundary. */
-export class GamesErrorBoundary extends Component<
-  { children: ReactNode; onReset: () => void },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  retry = () => {
-    this.props.onReset();
-    this.setState({ failed: false });
-  };
-  render() {
-    return this.state.failed ? <GamesError onRetry={this.retry} /> : this.props.children;
-  }
-}
-
 function UpcomingGames() {
   const { t } = useI18n();
   return (
@@ -198,11 +181,11 @@ function UpcomingGames() {
       <PageHeader eyebrow={t("brand")} title={t("games.title")} subtitle={t("games.sub")} />
       <QueryErrorResetBoundary>
         {({ reset }) => (
-          <GamesErrorBoundary onReset={reset}>
+          <RetryBoundary onReset={reset} fallback={(retry) => <GamesError onRetry={retry} />}>
             <Suspense fallback={<GamesLoading />}>
               <GamesList />
             </Suspense>
-          </GamesErrorBoundary>
+          </RetryBoundary>
         )}
       </QueryErrorResetBoundary>
     </PageShell>
