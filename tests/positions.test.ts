@@ -237,7 +237,7 @@ for (const [goals, shots, onTarget] of estimates) {
     delete monthFields["SHOTS ttl - SOT"];
     monthFields["Goals"] = goals;
     const p = await loadPositions(["CF"]);
-    for (const month of ["2026-06", "2026-07", "2026-08", "2026-09"] as const) {
+    for (const month of ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"] as const) {
       const subject = { ...p, stats: { [month]: p.stats["2026-06"]! } };
       const s = aggregateOutfield(subject, month);
       expect([s.shots, s.shotsOnTarget]).toEqual(month === "2026-06" || month === "2026-07" ? [shots, onTarget] : [0, 0]);

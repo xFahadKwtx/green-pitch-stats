@@ -30,7 +30,7 @@ mock.module("../src/lib/airtable.server", () => ({
     reads.push(table);
     if (table === AIRTABLE_TABLES.playersDatabase) return playerRows;
     if (table === AIRTABLE_TABLES.statsAugust) return [monthRow];
-    if ([AIRTABLE_TABLES.statsJune, AIRTABLE_TABLES.statsJuly, AIRTABLE_TABLES.statsSeptember].includes(table)) return [];
+    if ([AIRTABLE_TABLES.statsJune, AIRTABLE_TABLES.statsJuly, AIRTABLE_TABLES.statsSeptember, AIRTABLE_TABLES.statsOctober].includes(table)) return [];
     throw new Error("Unexpected table");
   },
 }));
@@ -92,7 +92,7 @@ for (const language of ["en", "ar"] as const) {
         expect(profilePlayer.points).toBe(balance);
         expect(reads).toEqual([
           AIRTABLE_TABLES.playersDatabase, AIRTABLE_TABLES.statsJune, AIRTABLE_TABLES.statsJuly,
-          AIRTABLE_TABLES.statsAugust, AIRTABLE_TABLES.statsSeptember,
+          AIRTABLE_TABLES.statsAugust, AIRTABLE_TABLES.statsSeptember, AIRTABLE_TABLES.statsOctober,
         ]);
         const originalPlayer = JSON.stringify(profilePlayer);
         const html = renderToStaticMarkup(createElement(PlayerProfile));
