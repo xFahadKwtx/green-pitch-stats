@@ -28,7 +28,7 @@ function safeState<K extends string, T>(queryClient: QueryClient, target: Query 
     queries: state.queries.map((query) => ({
       queryKey: [key] as [K],
       queryHash: query.queryHash,
-      dehydratedAt: query.dehydratedAt,
+      ...(query.dehydratedAt !== undefined ? { dehydratedAt: query.dehydratedAt } : {}),
       state: { ...query.state, data: query.state.data as T, error: null, fetchFailureReason: null },
     })),
   };
