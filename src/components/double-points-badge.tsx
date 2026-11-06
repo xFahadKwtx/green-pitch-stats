@@ -1,5 +1,5 @@
 /** Visual-only marker for the Airtable "Double Points" checkbox. Never affects points. */
-export function DoublePointsBadge({ active, label }: { active?: boolean; label: string }) {
+export function DoublePointsBadge({ active, label }: { active?: boolean | undefined; label: string }) {
   if (active !== true) return null;
   return (
     <span
