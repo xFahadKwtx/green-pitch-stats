@@ -1,4 +1,3 @@
-import { DoublePointsBadge } from "@/components/double-points-badge";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Crown } from "lucide-react";
@@ -172,8 +171,7 @@ function Board({
                       )}
                     >
                       {lang === "ar" ? s.player.nameAr : s.player.name}
-                    </Link>{" "}
-                    <DoublePointsBadge active={s.player.doublePoints} label={t("badge.doublePoints")} />
+                    </Link>
                   </td>
                   {columns.map((c) => (
                     <td
