@@ -26,6 +26,7 @@ export const AIRTABLE_TABLES = {
   statsAugust: "tbl78eFjDG3gqdPcX",
   statsSeptember: "tblMNANv3vwA0Awnf",
   statsOctober: "tblHjLFOBQngSaERO",
+  statsNovember: "tblU6v33RPHb4rad1",
   upcomingGames: "tblWuIk1o1zgvv5le",
   records: "tbl2emiWIdMwtnKq5",
   store: "tblKFfVYjyMpvapSy",

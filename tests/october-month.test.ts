@@ -13,6 +13,7 @@ const tables: Record<string, AirtableRecord[]> = {
   [AIRTABLE_TABLES.playersDatabase]: players,
   [AIRTABLE_TABLES.statsJune]: [],
   [AIRTABLE_TABLES.statsJuly]: [],
+  [AIRTABLE_TABLES.statsNovember]: [],
   [AIRTABLE_TABLES.statsAugust]: [],
   [AIRTABLE_TABLES.statsSeptember]: [{ id: "recSep", fields: { "Players DATABASE 2": [A], ...stats(3) } }],
   [AIRTABLE_TABLES.statsOctober]: [
@@ -30,7 +31,7 @@ mock.module("../src/lib/airtable.server", () => ({
 afterAll(() => mock.restore());
 
 test("October is enabled once with the new table", () => {
-  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]);
+  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
   expect(AIRTABLE_TABLES.statsOctober).toBe("tblHjLFOBQngSaERO");
 });
 

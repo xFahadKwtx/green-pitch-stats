@@ -72,7 +72,7 @@ test("homepage uses the exact static marketing string and preserves surrounding 
   expect(home).toContain('dir={s.value === "99+" ? "ltr" : undefined}');
 });
 test("October 2026 is supported once, after September", () => {
-  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]);
+  expect(MONTHS).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
 });
 test("README describes current feeds, rewards and manual Freeze requests", () => {
   const readme = source("README.md");

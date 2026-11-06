@@ -16,6 +16,7 @@ const months: [MonthKey, string, string][] = [
   ["2026-08", AIRTABLE_TABLES.statsAugust, "Players DATABASE 2"],
   ["2026-09", AIRTABLE_TABLES.statsSeptember, "Players DATABASE 2"],
   ["2026-10", AIRTABLE_TABLES.statsOctober, "Players DATABASE 2"],
+  ["2026-11", AIRTABLE_TABLES.statsNovember, "Players DATABASE 2"],
 ];
 
 const full = {

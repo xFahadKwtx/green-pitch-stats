@@ -25,6 +25,7 @@ const MONTH_TABLES: Record<MonthKey, string> = {
   "2026-08": AIRTABLE_TABLES.statsAugust,
   "2026-09": AIRTABLE_TABLES.statsSeptember,
   "2026-10": AIRTABLE_TABLES.statsOctober,
+  "2026-11": AIRTABLE_TABLES.statsNovember,
 };
 
 /**
@@ -35,6 +36,7 @@ const MONTH_TABLES: Record<MonthKey, string> = {
  *   August    tbl78eFjDG3gqdPcX -> "Players DATABASE 2"
  *   September tblMNANv3vwA0Awnf -> "Players DATABASE 2"
  *   October   tblHjLFOBQngSaERO -> "Players DATABASE 2"
+ *   November  tblU6v33RPHb4rad1 -> "Players DATABASE 2" (owner-verified)
  */
 const MONTH_PLAYER_FIELDS: Record<MonthKey, string> = {
   "2026-06": "احصائيات اللاعب",
@@ -42,6 +44,7 @@ const MONTH_PLAYER_FIELDS: Record<MonthKey, string> = {
   "2026-08": "Players DATABASE 2",
   "2026-09": "Players DATABASE 2",
   "2026-10": "Players DATABASE 2",
+  "2026-11": "Players DATABASE 2",
 };
 
 /** Case- and outer-whitespace-insensitive field name comparison. */
