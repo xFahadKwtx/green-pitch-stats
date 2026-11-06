@@ -1,3 +1,4 @@
+import { DoublePointsBadge } from "@/components/double-points-badge";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
@@ -76,7 +77,8 @@ function PlayerProfile() {
             {positionLabel}
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight uppercase sm:text-5xl">
-            {lang === "ar" ? player.nameAr : player.name}
+            {lang === "ar" ? player.nameAr : player.name}{" "}
+            <DoublePointsBadge active={player.doublePoints} label={t("badge.doublePoints")} />
           </h1>
         </div>
         <div className="rounded-2xl border border-gold/40 bg-gold/10 px-6 py-4 text-center">

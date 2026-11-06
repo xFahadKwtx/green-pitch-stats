@@ -1,3 +1,4 @@
+import { DoublePointsBadge } from "@/components/double-points-badge";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, Search } from "lucide-react";
@@ -165,7 +166,8 @@ function PlayersPage() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-display text-lg font-semibold tracking-wide">
-                    {lang === "ar" ? p.nameAr : p.name}
+                    {lang === "ar" ? p.nameAr : p.name}{" "}
+                    <DoublePointsBadge active={p.doublePoints} label={t("badge.doublePoints")} />
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">
                     {playerCategories(p)

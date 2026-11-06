@@ -239,6 +239,7 @@ export async function fetchPlayersFromAirtable(): Promise<Player[]> {
       playsOutfield: positionTokens.some((p) => p !== "GK" && OUTFIELD_GROUP[p] !== undefined),
       points: optNumeric(record.fields["Points Balance"]),
       last5Results: parseLast5Results(record.fields["Last 5 Results"]),
+      doublePoints: record.fields["Double Points"] === true,
       stats,
     });
   }

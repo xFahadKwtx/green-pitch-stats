@@ -1,3 +1,4 @@
+import { DoublePointsBadge } from "@/components/double-points-badge";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -207,6 +208,7 @@ function PlayerSelect({
         {players.map((p) => (
           <option key={p.id} value={p.id} disabled={p.id === disabledId}>
             {displayName(p, lang)}
+            {p.doublePoints ? " ⚡ 2X" : ""}
           </option>
         ))}
       </select>
@@ -282,13 +284,15 @@ function ComparePage() {
           <div className="glass-card overflow-hidden">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border/70 px-3 py-4 sm:gap-4 sm:px-5">
               <p className="truncate text-center font-display text-base font-bold tracking-wide uppercase sm:text-lg">
-                {displayName(p1, lang)}
+                {displayName(p1, lang)}{" "}
+                <DoublePointsBadge active={p1.doublePoints} label={t("badge.doublePoints")} />
               </p>
               <p className="text-center text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
                 {t("compare.statistic")}
               </p>
               <p className="truncate text-center font-display text-base font-bold tracking-wide uppercase sm:text-lg">
-                {displayName(p2, lang)}
+                {displayName(p2, lang)}{" "}
+                <DoublePointsBadge active={p2.doublePoints} label={t("badge.doublePoints")} />
               </p>
             </div>
 

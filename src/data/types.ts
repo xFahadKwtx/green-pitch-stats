@@ -58,6 +58,8 @@ export interface Player {
   points: StatValue;
   /** Last 5 Results from the master table (oldest → newest, left → right). */
   last5Results: Array<"W" | "L" | "D" | null>;
+  /** Airtable "Double Points" checkbox; visual badge only, never alters points. */
+  doublePoints?: boolean;
   stats: Partial<Record<MonthKey, MonthStats>>;
 }
 

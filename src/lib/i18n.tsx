@@ -89,6 +89,7 @@ const dict = {
     "compare.player1": "Player 1",
     "compare.player2": "Player 2",
     "compare.select": "Select a player",
+    "badge.doublePoints": "Double points",
     "compare.statistic": "Statistic",
     "compare.pickBoth": "Select two players to start comparing.",
     "compare.noShared":
@@ -273,6 +274,7 @@ const dict = {
     "compare.player1": "اللاعب الأول",
     "compare.player2": "اللاعب الثاني",
     "compare.select": "اختر لاعباً",
+    "badge.doublePoints": "نقاط مضاعفة",
     "compare.statistic": "الإحصائية",
     "compare.pickBoth": "اختر لاعبين للبدء بالمقارنة.",
     "compare.noShared": "لا توجد إحصائيات مشتركة لعرضها لهذين اللاعبين في هذه الفترة.",
