@@ -1,4 +1,5 @@
 import type { Announcement, PositionChallenge, StoreProduct } from "./types";
+import { seasonTitleAr, seasonTitleEn } from "@/lib/season";
 
 export const contactInfo = {
   phone: "+965 51287700",
@@ -12,20 +13,33 @@ export const contactInfo = {
   tiktokHandle: "@Almustatil.Alakhdar",
 };
 
-/** Edit this object to change the home page banner. */
-export const announcement: Announcement = {
+/**
+ * Edit this object to change the home page banner.
+ *
+ * The month is deliberately not written here: the title follows the current
+ * month in Kuwait time, so the card rolls over on its own every month. See
+ * seasonAnnouncement() and src/lib/season.ts.
+ */
+export const announcement = {
   id: "ann-2026-08",
   tag: "Latest Announcement",
   tagAr: "أحدث إعلان",
-  title: "SEPTEMBER SEASON IS LIVE",
-  titleAr: "موسم سبتمبر انطلق",
   body: "Football bookings every week, full match stats for every player, and monthly awards with real discounts. Register through WhatsApp and secure your spot on the pitch.",
   bodyAr:
     "حجوزات كرة قدم كل أسبوع، إحصائيات كاملة لكل لاعب، وجوائز شهرية مع خصومات حقيقية. سجّل عبر واتساب واحفظ مكانك في الملعب.",
   ctaLabel: "View Upcoming Games",
   ctaLabelAr: "شاهد المباريات القادمة",
   ctaHref: "/upcoming-games",
-};
+} satisfies Omit<Announcement, "title" | "titleAr">;
+
+/** The banner with its title set to the current month in Kuwait time. */
+export function seasonAnnouncement(now: Date): Announcement {
+  return {
+    ...announcement,
+    title: seasonTitleEn(now),
+    titleAr: seasonTitleAr(now),
+  };
+}
 
 /** Add products here (or from the database later) and the store grid fills in. */
 export const storeProducts: StoreProduct[] = [];

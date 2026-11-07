@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, BarChart3, CalendarDays, Gift, Trophy } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import logoAsset from "@/assets/logo.png.asset.json";
 import { Badge, PageShell } from "@/components/ui-kit";
 import { playersQueryOptions } from "@/lib/players-query";
-import { announcement } from "@/data/site";
+import { seasonAnnouncement } from "@/data/site";
 import { useI18n, type TKey } from "@/lib/i18n";
+import { kuwaitMonthIndex } from "@/lib/season";
 import { absoluteUrl } from "@/lib/site";
 
 export const Route = createFileRoute("/")({
@@ -41,7 +43,24 @@ const quickLinks: { to: string; key: TKey; icon: typeof Trophy }[] = [
 function Home() {
   const { t, lang } = useI18n();
   const { data: players } = useQuery(playersQueryOptions);
+  const [now, setNow] = useState(() => new Date());
 
+  // The banner title follows the current month in Kuwait time. Checking once a
+  // minute lets an open tab roll the card over on its own when a new month
+  // starts, without re-rendering while the month is unchanged.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow((previous) => {
+        const next = new Date();
+        return kuwaitMonthIndex(next) === kuwaitMonthIndex(previous)
+          ? previous
+          : next;
+      });
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const announcement = seasonAnnouncement(now);
 
   return (
     <PageShell>
